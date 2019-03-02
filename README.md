@@ -4,6 +4,9 @@ Utility commands by CIRCLE AROUND Inc.
 
 ## indexes
 
+### docker-clean
+remove unused docker images
+
 ### git-remove-merged-branches
 for remove merged branches on current git directory.
 
