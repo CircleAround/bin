@@ -1,0 +1,9 @@
+#!/bin/bash
+# @see https://stackoverflow.com/questions/9168392/shell-script-to-kill-the-process-listening-on-port-3000
+pid=$(lsof -i:$1 -t)
+echo ${pid}
+if [ -z "${pid}" ]; then
+  echo "port: '$1' not found. quit."
+  exit 1
+fi  
+kill -TERM $pid || kill -KILL $pid
