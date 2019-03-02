@@ -2,15 +2,13 @@
 
 Utility commands by CIRCLE AROUND Inc.
 
-## indexes
-
-### docker-clean
+## docker-clean
 remove unused docker images
 
-### git-remove-merged-branches
+## git-remove-merged-branches
 for remove merged branches on current git directory.
 
-### killport
+## killport
 kill process by attaching portnumber.
 
 kill process of using port of 3000.
