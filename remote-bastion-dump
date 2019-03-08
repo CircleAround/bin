@@ -1,0 +1,15 @@
+#!/bin/bash
+
+# `remote-bastion-dump ssh-bastion-host-name db-host db-user db-pass db-name`
+
+bastion_host=$1
+host=$2
+user=$3
+pass=$4
+dbname=$5
+
+ssh -f -N -L 13306:${host}:3306 ${bastion_host}
+
+mysqldump -u${user} -p${pass} -h127.0.0.1 --port=13306 --set-gtid-purged=OFF ${dbname} > ${bastion_host}`date "+%Y%m%d_%H%M%S"`.sql
+
+ps aux | grep "ssh -f -N -L" | grep ${bastion_host} | awk '{ print $2 }'  | xargs kill -9
