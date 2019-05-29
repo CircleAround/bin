@@ -1,15 +1,16 @@
 #!/bin/bash
 
-# `remote-bastion-dump ssh-bastion-host-name db-host db-user db-pass db-name`
+# `remote-bastion-dump ssh-bastion-host-name db-host db-user db-pass db-name [mysqldupmparams]`
 
 bastion_host=$1
 host=$2
 user=$3
 pass=$4
 dbname=$5
+mysqldupmparams=${6:-"--set-gtid-purged=OFF"}
 
 ssh -f -N -L 13306:${host}:3306 ${bastion_host}
 
-mysqldump -u${user} -p${pass} -h127.0.0.1 --port=13306 --set-gtid-purged=OFF ${dbname} > ${bastion_host}`date "+%Y%m%d_%H%M%S"`.sql
+mysqldump -u${user} -p${pass} -h127.0.0.1 --port=13306 ${mysqldupmparams} ${dbname} > ${bastion_host}`date "+%Y%m%d_%H%M%S"`.sql
 
 ps aux | grep "ssh -f -N -L" | grep ${bastion_host} | awk '{ print $2 }'  | xargs kill -9
