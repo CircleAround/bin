@@ -6,4 +6,4 @@ if [ -z "${pid}" ]; then
   echo "port: '$1' not found. quit."
   exit 1
 fi  
-kill -TERM $pid || kill -KILL $pid
+kill -15 $pid || kill -9 $pid
