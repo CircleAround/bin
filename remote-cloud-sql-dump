@@ -1,0 +1,15 @@
+#!/bin/bash
+
+# `remote-cloud-sql-dump name instance db-user db-pass db-name`
+
+name=$1
+instance=$2
+user=$3
+pass=$4
+dbname=$5
+
+cloud_sql_proxy -instances=${instance}=tcp:13306 &
+
+mysqldump -u${user} -p${pass} -h127.0.0.1 --port=13306 --set-gtid-purged=OFF ${dbname} > ${name}`date "+%Y%m%d_%H%M%S"`.sql
+
+ps aux | grep ${instance} | awk '{ print $2 }'  | xargs kill -9

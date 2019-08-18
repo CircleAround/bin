@@ -1,0 +1,22 @@
+#!/bin/bash
+
+# `remote-bastion-dump-eb-pg beanstalkenv pempath db-host db-user db-name [pg_dumpparams]`
+
+beanstalkenv=$1
+pempath=$2
+db_host=$3
+db_user=$4
+db_name=$5
+pg_dump_params=$6
+
+ip=`eb ssh ${beanstalkenv} -o --quiet --command "curl -s ifconfig.me"`
+echo "IP: ${ip}"
+
+ssh -f -N -L 15432:${db_host}:5432 -i ${pempath} ec2-user@${ip}
+echo 'connected'
+
+pg_dump -h localhost -p 15432  -U ${db_user} ${pg_dump_params} ${db_name} > ${beanstalkenv}`date "+%Y%m%d_%H%M%S"`.sql
+echo 'dumped'
+
+ps aux | grep "ssh -f -N -L" | grep ${ip} | awk '{ print $2 }'  | xargs kill -9
+echo 'finished'
