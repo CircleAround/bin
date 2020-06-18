@@ -9,7 +9,10 @@ db_user=$4
 db_name=$5
 pg_dump_params=$6
 
-ip=`eb ssh ${beanstalkenv} -o --quiet --command "curl -s ifconfig.me"`
+customssh="ssh -i ${pempath}"
+echo "CUSTOM SSH COMMAND: ${customssh}"
+
+ip=`eb ssh ${beanstalkenv} -o --custom "${customssh}" --quiet --command "curl -s ifconfig.me"`
 echo "IP: ${ip}"
 
 ssh -f -N -L 15432:${db_host}:5432 -i ${pempath} ec2-user@${ip}
