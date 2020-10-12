@@ -18,7 +18,7 @@ echo "IP: ${ip}"
 ssh -f -N -L 15432:${db_host}:5432 -i ${pempath} ec2-user@${ip}
 echo 'connected'
 
-pg_dump -h localhost -p 15432  -U ${db_user} ${pg_dump_params} ${db_name} > ${beanstalkenv}`date "+%Y%m%d_%H%M%S"`.sql
+pg_dump --clean -h localhost -p 15432  -U ${db_user} ${pg_dump_params} ${db_name} > ${beanstalkenv}`date "+%Y%m%d_%H%M%S"`.sql
 echo 'dumped'
 
 ps aux | grep "ssh -f -N -L" | grep ${ip} | awk '{ print $2 }'  | xargs kill -9
