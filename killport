@@ -1,9 +1,23 @@
 #!/bin/bash
-# @see https://stackoverflow.com/questions/9168392/shell-script-to-kill-the-process-listening-on-port-3000
-pid=$(lsof -i:$1 -t)
-echo ${pid}
-if [ -z "${pid}" ]; then
-  echo "port: '$1' not found. quit."
+# Usage: killport 3000
+PORT=$1
+
+# First, check if any Docker container is exposing the host port $PORT
+docker_containers=$(docker ps --format '{{.ID}} {{.Ports}}' | grep -E ":${PORT}->" | awk '{print $1}')
+if [ ! -z "$docker_containers" ]; then
+    echo "Docker containers are using port $PORT: $docker_containers"
+    for container in $docker_containers; do
+        echo "Stopping container $container..."
+        docker stop $container
+    done
+    exit 0
+fi
+
+# If no Docker container is found, find and kill the process using the port
+pid=$(lsof -i:$PORT -t)
+if [ -z "$pid" ]; then
+  echo "Port $PORT not found. Exiting."
   exit 1
-fi  
+fi
+echo "Killing process with PID $pid..."
 kill -15 $pid || kill -9 $pid

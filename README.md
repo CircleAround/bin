@@ -9,7 +9,7 @@ remove unused docker images
 for remove merged branches on current git directory.
 
 ## killport
-kill process by attaching portnumber.
+kill process (or Docker container) by attaching portnumber.
 
 kill process of using port of 3000.
 
