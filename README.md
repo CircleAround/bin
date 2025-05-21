@@ -24,10 +24,20 @@ call mysqldump through bastion server
 remote-bastion-dump ssh-bastion-host-name db-host db-user db-pass db-name
 ```
 
+## aws-mfa.sh
+MFA authentication for AWS CLI.
+
+set AWS_MFA_SERIAL in your environment as your MFA Device(ex. in ~/.bash_profile or ~/.zshrc).
+
+```
+export AWS_MFA_SERIAL=arn:aws:iam::111122223333:mfa/your-iam-user
+source aws-mfa.sh
+```
+
 ## switch-role-with-mfa.sh
 switch role with MFA.
 
-set AWS_MFA_SERIAL in your environment as your MFA Device.
+set AWS_MFA_SERIAL in your environment as your MFA Device(ex. in ~/.bash_profile or ~/.zshrc).
 
 ```
 export AWS_MFA_SERIAL=arn:aws:iam::111122223333:mfa/your-iam-user
