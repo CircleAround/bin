@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# git-wt  ─ create worktree at ../<repo>.worktrees/<branch>
+set -euo pipefail
+
+usage() { echo "Usage: git-wt [branch]"; exit 1; }
+[[ ${1-} =~ ^(-h|--help)$ ]] && usage
+
+# ① Git リポジトリか確認
+git rev-parse --is-inside-work-tree &>/dev/null || {
+  echo "❌ ここは Git リポジトリではありません" >&2; exit 1; }
+
+# ② ブランチ名（未指定なら聞く）
+branch="${1-}"
+[[ -z $branch ]] && read -rp "作成するブランチ名: " branch
+[[ -z $branch ]] && { echo "❌ ブランチ名が空です"; exit 1; }
+
+# ③ パス計算
+root="$(git rev-parse --show-toplevel)"
+repo="$(basename "$root")"
+wroot="$root/../${repo}.worktrees"
+target="$wroot/$branch"
+
+# ④ 重複チェック
+if git worktree list --porcelain | grep -q "^worktree ${target}$"; then
+  echo "⚠️ 既に worktree が存在: $target"; exit 1; fi
+[[ -e $target ]] && { echo "⚠️ 既存ディレクトリがあります: $target"; exit 1; }
+
+mkdir -p "$wroot"
+
+# ⑤ リモートにブランチがあれば追跡、無ければ新規
+if git show-ref --verify --quiet "refs/heads/$branch"; then
+  git worktree add "$target" "$branch"
+elif git ls-remote --exit-code --heads origin "$branch" &>/dev/null; then
+  git worktree add "$target" "origin/$branch"
+else
+  git worktree add -b "$branch" "$target"
+fi
+
+echo "✅ Worktree 作成: $target"
+git worktree list
+
