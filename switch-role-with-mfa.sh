@@ -2,10 +2,12 @@
 
 if [[ -z "${1:-}" ]]; then
   echo "❌ Error: Please specify the target role ARN as an argument."
+  echo "Usage: $0 <role-arn> [duration-seconds]"
   return 1
 fi
 
 AWS_ASSUME_ROLE_ARN="$1"
+DURATION_SECONDS="${2:-}"
 
 if [[ -z "${AWS_MFA_SERIAL:-}" ]]; then
   echo "❌ Error: Environment variable AWS_MFA_SERIAL is not set."
@@ -18,14 +20,23 @@ echo "🔑 Using source profile: $AWS_SOURCE_PROFILE"
 read -p "Enter MFA code (6 digits): " MFA_CODE
 
 echo "🎭 Switching role with MFA: $AWS_ASSUME_ROLE_ARN..."
-ASSUMED_JSON=$(aws sts assume-role \
-  --role-arn "$AWS_ASSUME_ROLE_ARN" \
-  --role-session-name "assumed-$(date +%s)" \
-  --serial-number "$AWS_MFA_SERIAL" \
-  --token-code "$MFA_CODE" \
-  --profile "$AWS_SOURCE_PROFILE" \
-  --duration-seconds 14400 \
-  --output json 2>&1) || {
+
+# Build assume-role command
+ASSUME_ROLE_CMD="aws sts assume-role \
+  --role-arn \"$AWS_ASSUME_ROLE_ARN\" \
+  --role-session-name \"assumed-\$(date +%s)\" \
+  --serial-number \"$AWS_MFA_SERIAL\" \
+  --token-code \"$MFA_CODE\" \
+  --profile \"$AWS_SOURCE_PROFILE\""
+
+# Add duration-seconds only if specified
+if [[ -n "$DURATION_SECONDS" ]]; then
+  ASSUME_ROLE_CMD="$ASSUME_ROLE_CMD --duration-seconds $DURATION_SECONDS"
+fi
+
+ASSUME_ROLE_CMD="$ASSUME_ROLE_CMD --output json 2>&1"
+
+ASSUMED_JSON=$(eval "$ASSUME_ROLE_CMD") || {
   echo "❌ Role switch failed."
   echo "$ASSUMED_JSON"
   return 1
