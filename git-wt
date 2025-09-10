@@ -18,28 +18,28 @@ EOF
   exit 1
 }
 
-# ① Git リポジトリか確認
+# ① Check if this is a Git repository
 git rev-parse --is-inside-work-tree &>/dev/null || {
-  echo "❌ ここは Git リポジトリではありません" >&2; exit 1; }
+  echo "❌ Not a Git repository" >&2; exit 1; }
 
-# ② パス計算（共通）
+# ② Calculate paths (common)
 root="$(git rev-parse --show-toplevel)"
 repo="$(basename "$root")"
 wroot="$root/../${repo}.worktrees"
 
-# ③ サブコマンド処理
+# ③ Subcommand processing
 command="${1-}"
 case "$command" in
   -h|--help) usage ;;
   pop)
     shift
-    # pop サブコマンドの処理
+    # pop subcommand processing
     target_num="${1-}"
     
-    # worktree ディレクトリが存在するかチェック
-    [[ -d "$wroot" ]] || { echo "❌ worktree ディレクトリが存在しません: $wroot"; exit 1; }
+    # Check if worktree directory exists
+    [[ -d "$wroot" ]] || { echo "❌ Worktree directory does not exist: $wroot"; exit 1; }
     
-    # 番号が指定されていない場合、最大番号を見つける
+    # If no number specified, find the maximum number
     if [[ -z "$target_num" ]]; then
       max_num=0
       for dir in "$wroot"/*; do
@@ -47,25 +47,25 @@ case "$command" in
         num=$(basename "$dir")
         [[ "$num" =~ ^[0-9]+$ ]] && ((num > max_num)) && max_num=$num
       done
-      [[ $max_num -eq 0 ]] && { echo "❌ 削除可能な worktree が見つかりません"; exit 1; }
+      [[ $max_num -eq 0 ]] && { echo "❌ No removable worktree found"; exit 1; }
       target_num=$max_num
     fi
     
     target="$wroot/$target_num"
-    [[ -d "$target" ]] || { echo "❌ worktree が存在しません: $target"; exit 1; }
+    [[ -d "$target" ]] || { echo "❌ Worktree does not exist: $target"; exit 1; }
     
-    # worktree を削除
+    # Remove worktree
     git worktree remove "$target"
-    echo "✅ Worktree 削除: $target"
+    echo "✅ Worktree removed: $target"
     git worktree list
     ;;
   add)
     shift
-    # add サブコマンドの処理
+    # add subcommand processing
     branch="${1-}"
-    [[ -z "$branch" ]] && { echo "❌ ブランチ名を指定してください: git-wt add <branch>"; exit 1; }
+    [[ -z "$branch" ]] && { echo "❌ Please specify branch name: git-wt add <branch>"; exit 1; }
     
-    # 次の利用可能な番号を見つける
+    # Find next available number
     next_num=1
     while [[ -e "$wroot/$next_num" ]]; do
       ((next_num++))
@@ -74,7 +74,7 @@ case "$command" in
     
     mkdir -p "$wroot"
     
-    # リモートにブランチがあれば追跡、無ければ新規
+    # Track if branch exists remotely, otherwise create new
     if git show-ref --verify --quiet "refs/heads/$branch"; then
       git worktree add "$target" "$branch"
     elif git ls-remote --exit-code --heads origin "$branch" &>/dev/null; then
@@ -83,28 +83,28 @@ case "$command" in
       git worktree add -b "$branch" "$target"
     fi
     
-    echo "✅ Worktree 作成: $target (ブランチ: $branch)"
+    echo "✅ Worktree created: $target (branch: $branch)"
     git worktree list
     
-    # 移動用コマンドを表示
+    # Show command to navigate to new directory
     echo ""
-    echo "📁 新しいディレクトリに移動するには:"
+    echo "📁 To navigate to the new directory:"
     echo "cd \"$target\""
     ;;
   "")
-    # 引数なし：選択メニューを表示
-    echo "コマンドを選択してください:"
-    echo "1. add - 新しいworktreeを作成"
-    echo "2. pop - 既存のworktreeを削除"
+    # No arguments: show selection menu
+    echo "Please select a command:"
+    echo "1. add - Create new worktree"
+    echo "2. pop - Remove existing worktree"
     echo ""
-    read -rp "選択 [1-2]: " choice
+    read -rp "Choice [1-2]: " choice
     
     case "$choice" in
       1)
-        read -rp "ブランチ名を入力: " branch
-        [[ -z "$branch" ]] && { echo "❌ ブランチ名が空です"; exit 1; }
+        read -rp "Enter branch name: " branch
+        [[ -z "$branch" ]] && { echo "❌ Branch name is empty"; exit 1; }
         
-        # 次の利用可能な番号を見つける
+        # Find next available number
         next_num=1
         while [[ -e "$wroot/$next_num" ]]; do
           ((next_num++))
@@ -113,7 +113,7 @@ case "$command" in
         
         mkdir -p "$wroot"
         
-        # リモートにブランチがあれば追跡、無ければ新規
+        # Track if branch exists remotely, otherwise create new
         if git show-ref --verify --quiet "refs/heads/$branch"; then
           git worktree add "$target" "$branch"
         elif git ls-remote --exit-code --heads origin "$branch" &>/dev/null; then
@@ -122,7 +122,7 @@ case "$command" in
           git worktree add -b "$branch" "$target"
         fi
         
-        echo "✅ Worktree 作成: $target (ブランチ: $branch)"
+        echo "✅ Worktree created: $target (branch: $branch)"
         git worktree list
         
         # 移動用コマンドを表示
@@ -134,29 +134,29 @@ case "$command" in
         # worktree ディレクトリが存在するかチェック
         [[ -d "$wroot" ]] || { echo "❌ worktree ディレクトリが存在しません: $wroot"; exit 1; }
         
-        # 最大番号を見つける
+        # Find maximum number
         max_num=0
         for dir in "$wroot"/*; do
           [[ -d "$dir" ]] || continue
           num=$(basename "$dir")
           [[ "$num" =~ ^[0-9]+$ ]] && ((num > max_num)) && max_num=$num
         done
-        [[ $max_num -eq 0 ]] && { echo "❌ 削除可能な worktree が見つかりません"; exit 1; }
+        [[ $max_num -eq 0 ]] && { echo "❌ No removable worktree found"; exit 1; }
         
         target="$wroot/$max_num"
         git worktree remove "$target"
-        echo "✅ Worktree 削除: $target"
+        echo "✅ Worktree removed: $target"
         git worktree list
         ;;
       *)
-        echo "❌ 無効な選択です"
+        echo "❌ Invalid selection"
         exit 1
         ;;
     esac
     ;;
   *)
-    # 不明なサブコマンド
-    echo "❌ 不明なサブコマンド: $command"
+    # Unknown subcommand
+    echo "❌ Unknown subcommand: $command"
     usage
     ;;
 esac
