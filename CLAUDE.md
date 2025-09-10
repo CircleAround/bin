@@ -2,57 +2,57 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## リポジトリ概要
+## Repository Overview
 
-CIRCLE AROUND Inc.が開発した、開発・DevOpsタスク用のシェルユーティリティスクリプト集です。Docker操作、gitワークフロー自動化、AWS MFA認証、踏み台サーバー経由のデータベース操作などを行う独立したbashスクリプトが含まれています。
+A collection of shell utility scripts for development and DevOps tasks developed by CIRCLE AROUND Inc. Contains standalone bash scripts for Docker operations, git workflow automation, AWS MFA authentication, and database operations via bastion servers.
 
-## アーキテクチャと構造
+## Architecture and Structure
 
-ルートディレクトリに個別の実行可能スクリプトを配置したシンプルなフラット構造：
+Simple flat structure with individual executable scripts in the root directory:
 
-- **AWS認証スクリプト** (`aws-mfa.sh`, `switch-role-with-mfa.sh`): MFAサポート付きのAWS CLI認証を処理。`AWS_MFA_SERIAL`環境変数に依存し、JSON解析に`jq`を使用。
+- **AWS Authentication Scripts** (`aws-mfa.sh`, `switch-role-with-mfa.sh`): Handle AWS CLI authentication with MFA support. Depend on `AWS_MFA_SERIAL` environment variable and use `jq` for JSON parsing.
 
-- **Gitユーティリティ** (`git-remove-merged-branches`, `git-wt`): gitワークフローを自動化。`git-wt`は`../<repo>.worktrees/<branch>`形式でworktreeを作成。
+- **Git Utilities** (`git-remove-merged-branches`, `git-wt`): Automate git workflows. `git-wt` creates worktrees in `../<repo>.worktrees/<branch>` format.
 
-- **Dockerユーティリティ** (`docker-clean`, `killport`): Dockerリソースを管理。`killport`は指定ポートを使用するDockerコンテナと通常プロセスの両方を処理。
+- **Docker Utilities** (`docker-clean`, `killport`): Manage Docker resources. `killport` handles both Docker containers and regular processes using the specified port.
 
-- **データベースユーティリティ** (`remote-bastion-dump`, `remote-bastion-dump-eb-pg`, `remote-cloud-sql-dump`): SSH踏み台サーバーやCloud SQL経由でのデータベースダンプを実行。
+- **Database Utilities** (`remote-bastion-dump`, `remote-bastion-dump-eb-pg`, `remote-cloud-sql-dump`): Execute database dumps via SSH bastion servers or Cloud SQL.
 
-## 開発コマンド
+## Development Commands
 
-ビルドシステムのないbashスクリプト集のため：
+As this is a collection of bash scripts without a build system:
 
-### スクリプトのテスト
+### Testing Scripts
 ```bash
-# スクリプトを実行可能にする
+# Make script executable
 chmod +x script-name
 
-# スクリプトを直接テスト
-./script-name [引数]
+# Test script directly
+./script-name [arguments]
 
-# sourceが必要なスクリプト (aws-mfa.sh, switch-role-with-mfa.sh)
+# Scripts that require sourcing (aws-mfa.sh, switch-role-with-mfa.sh)
 source ./aws-mfa.sh
 source ./switch-role-with-mfa.sh <role-arn> [duration]
 ```
 
-### コード品質チェック
+### Code Quality Checks
 ```bash
-# bash構文チェック
+# Bash syntax check
 bash -n script-name
 
-# shellcheckでリント（インストール済みの場合）
+# Lint with shellcheck (if installed)
 shellcheck script-name
 ```
 
-## 重要な技術詳細
+## Important Technical Details
 
-1. **MFAスクリプト**: `aws-mfa.sh`と`switch-role-with-mfa.sh`は現在のシェルセッションに環境変数をエクスポートするため、実行ではなくsourceする必要がある。`AWS_MFA_SERIAL`環境変数の事前設定が必要。
+1. **MFA Scripts**: `aws-mfa.sh` and `switch-role-with-mfa.sh` must be sourced rather than executed as they export environment variables to the current shell session. Requires `AWS_MFA_SERIAL` environment variable to be set beforehand.
 
-2. **エラーハンドリング**: スクリプトは厳密なエラー処理のため`set -euo pipefail`を使用。
+2. **Error Handling**: Scripts use `set -euo pipefail` for strict error handling.
 
-3. **依存関係**: 
-   - AWSスクリプト: `aws` CLIと`jq`が必要
-   - `killport`: `lsof`が必要、オプションで`docker`
-   - Gitスクリプト: `git`が必要
+3. **Dependencies**: 
+   - AWS scripts: Require `aws` CLI and `jq`
+   - `killport`: Requires `lsof`, optionally `docker`
+   - Git scripts: Require `git`
 
-4. **セッション期間**: AWS MFAスクリプトはデフォルトで36時間（129600秒）のセッション期間を使用。switch-roleスクリプトはオプションでduration引数を受け付ける。
+4. **Session Duration**: Both AWS MFA scripts accept an optional duration parameter in seconds. When not specified, AWS defaults are used (12 hours for get-session-token, 1 hour for assume-role).
