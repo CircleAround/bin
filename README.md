@@ -3,22 +3,39 @@
 Utility commands by CIRCLE AROUND Inc.
 
 ## docker-clean
-remove unused docker images
+Remove unused Docker images
+
+## git-wt
+Manage Git worktrees with sequential numbering in `../<repo>.worktrees/<number>` directories.
+
+```bash
+# Create worktree with branch
+git-wt add feature-branch
+
+# Remove highest numbered worktree
+git-wt pop
+
+# Remove specific worktree by number
+git-wt pop 2
+
+# Show interactive menu
+git-wt
+```
 
 ## git-remove-merged-branches
-for remove merged branches on current git directory.
+Remove merged branches in current git directory.
 
 ## killport
-kill process (or Docker container) by attaching portnumber.
+Kill process (or Docker container) by port number.
 
-kill process of using port of 3000.
+Kill process using port 3000:
 
 ```
 killport 3000
 ```
 
 ## remote-bastion-dump
-call mysqldump through bastion server
+Call mysqldump through bastion server
 
 ```
 remote-bastion-dump ssh-bastion-host-name db-host db-user db-pass db-name
@@ -27,7 +44,7 @@ remote-bastion-dump ssh-bastion-host-name db-host db-user db-pass db-name
 ## aws-mfa.sh
 MFA authentication for AWS CLI.
 
-set AWS_MFA_SERIAL in your environment as your MFA Device(ex. in ~/.bash_profile or ~/.zshrc).
+Set AWS_MFA_SERIAL in your environment as your MFA Device (e.g., in ~/.bash_profile or ~/.zshrc):
 
 ```
 export AWS_MFA_SERIAL=arn:aws:iam::111122223333:mfa/your-iam-user
@@ -37,9 +54,9 @@ source aws-mfa.sh [duration-seconds]
 If duration-seconds is not specified, AWS default (12 hours) will be used.
 
 ## switch-role-with-mfa.sh
-switch role with MFA.
+Switch AWS role with MFA.
 
-set AWS_MFA_SERIAL in your environment as your MFA Device(ex. in ~/.bash_profile or ~/.zshrc).
+Set AWS_MFA_SERIAL in your environment as your MFA Device (e.g., in ~/.bash_profile or ~/.zshrc):
 
 ```
 export AWS_MFA_SERIAL=arn:aws:iam::111122223333:mfa/your-iam-user
