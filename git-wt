@@ -1,47 +1,163 @@
 #!/usr/bin/env bash
-# git-wt  ─ create worktree at ../<repo>.worktrees/<branch>
+# git-wt  ─ manage worktrees at ../<repo>.worktrees/<number>
 set -euo pipefail
 
-usage() { echo "Usage: git-wt [branch]"; exit 1; }
-[[ ${1-} =~ ^(-h|--help)$ ]] && usage
+usage() {
+  cat << 'EOF'
+Usage: git-wt [command] [args]
+
+Commands:
+  git-wt add <branch>  Create worktree with branch
+  git-wt pop [num]     Remove worktree by number (defaults to highest)
+
+Examples:
+  git-wt add feature-x  Create worktree in directory "1" with branch "feature-x"
+  git-wt pop            Remove highest numbered worktree
+  git-wt pop 2          Remove worktree directory "2"
+EOF
+  exit 1
+}
 
 # ① Git リポジトリか確認
 git rev-parse --is-inside-work-tree &>/dev/null || {
   echo "❌ ここは Git リポジトリではありません" >&2; exit 1; }
 
-# ② ブランチ名（未指定なら聞く）
-branch="${1-}"
-[[ -z $branch ]] && read -rp "作成するブランチ名: " branch
-[[ -z $branch ]] && { echo "❌ ブランチ名が空です"; exit 1; }
-
-# ③ パス計算
+# ② パス計算（共通）
 root="$(git rev-parse --show-toplevel)"
 repo="$(basename "$root")"
 wroot="$root/../${repo}.worktrees"
 
-# ④ 次の利用可能な番号を見つける
-next_num=1
-while [[ -e "$wroot/$next_num" ]]; do
-  ((next_num++))
-done
-target="$wroot/$next_num"
-
-mkdir -p "$wroot"
-
-# ⑤ リモートにブランチがあれば追跡、無ければ新規
-if git show-ref --verify --quiet "refs/heads/$branch"; then
-  git worktree add "$target" "$branch"
-elif git ls-remote --exit-code --heads origin "$branch" &>/dev/null; then
-  git worktree add "$target" "origin/$branch"
-else
-  git worktree add -b "$branch" "$target"
-fi
-
-echo "✅ Worktree 作成: $target (ブランチ: $branch)"
-git worktree list
-
-# ⑥ 移動用コマンドを表示
-echo ""
-echo "📁 新しいディレクトリに移動するには:"
-echo "cd \"$target\""
+# ③ サブコマンド処理
+command="${1-}"
+case "$command" in
+  -h|--help) usage ;;
+  pop)
+    shift
+    # pop サブコマンドの処理
+    target_num="${1-}"
+    
+    # worktree ディレクトリが存在するかチェック
+    [[ -d "$wroot" ]] || { echo "❌ worktree ディレクトリが存在しません: $wroot"; exit 1; }
+    
+    # 番号が指定されていない場合、最大番号を見つける
+    if [[ -z "$target_num" ]]; then
+      max_num=0
+      for dir in "$wroot"/*; do
+        [[ -d "$dir" ]] || continue
+        num=$(basename "$dir")
+        [[ "$num" =~ ^[0-9]+$ ]] && ((num > max_num)) && max_num=$num
+      done
+      [[ $max_num -eq 0 ]] && { echo "❌ 削除可能な worktree が見つかりません"; exit 1; }
+      target_num=$max_num
+    fi
+    
+    target="$wroot/$target_num"
+    [[ -d "$target" ]] || { echo "❌ worktree が存在しません: $target"; exit 1; }
+    
+    # worktree を削除
+    git worktree remove "$target"
+    echo "✅ Worktree 削除: $target"
+    git worktree list
+    ;;
+  add)
+    shift
+    # add サブコマンドの処理
+    branch="${1-}"
+    [[ -z "$branch" ]] && { echo "❌ ブランチ名を指定してください: git-wt add <branch>"; exit 1; }
+    
+    # 次の利用可能な番号を見つける
+    next_num=1
+    while [[ -e "$wroot/$next_num" ]]; do
+      ((next_num++))
+    done
+    target="$wroot/$next_num"
+    
+    mkdir -p "$wroot"
+    
+    # リモートにブランチがあれば追跡、無ければ新規
+    if git show-ref --verify --quiet "refs/heads/$branch"; then
+      git worktree add "$target" "$branch"
+    elif git ls-remote --exit-code --heads origin "$branch" &>/dev/null; then
+      git worktree add "$target" "origin/$branch"
+    else
+      git worktree add -b "$branch" "$target"
+    fi
+    
+    echo "✅ Worktree 作成: $target (ブランチ: $branch)"
+    git worktree list
+    
+    # 移動用コマンドを表示
+    echo ""
+    echo "📁 新しいディレクトリに移動するには:"
+    echo "cd \"$target\""
+    ;;
+  "")
+    # 引数なし：選択メニューを表示
+    echo "コマンドを選択してください:"
+    echo "1. add - 新しいworktreeを作成"
+    echo "2. pop - 既存のworktreeを削除"
+    echo ""
+    read -rp "選択 [1-2]: " choice
+    
+    case "$choice" in
+      1)
+        read -rp "ブランチ名を入力: " branch
+        [[ -z "$branch" ]] && { echo "❌ ブランチ名が空です"; exit 1; }
+        
+        # 次の利用可能な番号を見つける
+        next_num=1
+        while [[ -e "$wroot/$next_num" ]]; do
+          ((next_num++))
+        done
+        target="$wroot/$next_num"
+        
+        mkdir -p "$wroot"
+        
+        # リモートにブランチがあれば追跡、無ければ新規
+        if git show-ref --verify --quiet "refs/heads/$branch"; then
+          git worktree add "$target" "$branch"
+        elif git ls-remote --exit-code --heads origin "$branch" &>/dev/null; then
+          git worktree add "$target" "origin/$branch"
+        else
+          git worktree add -b "$branch" "$target"
+        fi
+        
+        echo "✅ Worktree 作成: $target (ブランチ: $branch)"
+        git worktree list
+        
+        # 移動用コマンドを表示
+        echo ""
+        echo "📁 新しいディレクトリに移動するには:"
+        echo "cd \"$target\""
+        ;;
+      2)
+        # worktree ディレクトリが存在するかチェック
+        [[ -d "$wroot" ]] || { echo "❌ worktree ディレクトリが存在しません: $wroot"; exit 1; }
+        
+        # 最大番号を見つける
+        max_num=0
+        for dir in "$wroot"/*; do
+          [[ -d "$dir" ]] || continue
+          num=$(basename "$dir")
+          [[ "$num" =~ ^[0-9]+$ ]] && ((num > max_num)) && max_num=$num
+        done
+        [[ $max_num -eq 0 ]] && { echo "❌ 削除可能な worktree が見つかりません"; exit 1; }
+        
+        target="$wroot/$max_num"
+        git worktree remove "$target"
+        echo "✅ Worktree 削除: $target"
+        git worktree list
+        ;;
+      *)
+        echo "❌ 無効な選択です"
+        exit 1
+        ;;
+    esac
+    ;;
+  *)
+    # 不明なサブコマンド
+    echo "❌ 不明なサブコマンド: $command"
+    usage
+    ;;
+esac
 
