@@ -34,6 +34,21 @@ sanitize_branch_name() {
   fi
 }
 
+# Find the maximum numbered worktree directory
+find_max_worktree_num() {
+  local max_num=0
+  [[ -d "$wroot" ]] || return 1
+  
+  for dir in "$wroot"/*; do
+    [[ -d "$dir" ]] || continue
+    local num=$(basename "$dir")
+    [[ "$num" =~ ^[1-9]$ ]] && ((num > max_num)) && max_num=$num
+  done
+  
+  [[ $max_num -eq 0 ]] && return 1
+  echo "$max_num"
+}
+
 # Safely remove worktrees directory if it only contains numbered directories
 cleanup_worktrees_dir() {
   [[ -d "$wroot" ]] || return 0
@@ -130,14 +145,10 @@ case "$command" in
     
     # If no number specified, find the maximum number
     if [[ -z "$target_num" ]]; then
-      max_num=0
-      for dir in "$wroot"/*; do
-        [[ -d "$dir" ]] || continue
-        num=$(basename "$dir")
-        [[ "$num" =~ ^[0-9]+$ ]] && ((num > max_num)) && max_num=$num
-      done
-      [[ $max_num -eq 0 ]] && { echo "❌ No removable worktree found"; exit 1; }
-      target_num=$max_num
+      if ! target_num=$(find_max_worktree_num); then
+        echo "❌ No removable worktree found"
+        exit 1
+      fi
     fi
     
     target="$wroot/$target_num"
@@ -180,13 +191,10 @@ case "$command" in
         [[ -d "$wroot" ]] || { echo "❌ Worktree directory does not exist: $wroot"; exit 1; }
         
         # Find maximum number
-        max_num=0
-        for dir in "$wroot"/*; do
-          [[ -d "$dir" ]] || continue
-          num=$(basename "$dir")
-          [[ "$num" =~ ^[0-9]+$ ]] && ((num > max_num)) && max_num=$num
-        done
-        [[ $max_num -eq 0 ]] && { echo "❌ No removable worktree found"; exit 1; }
+        if ! max_num=$(find_max_worktree_num); then
+          echo "❌ No removable worktree found"
+          exit 1
+        fi
         
         target="$wroot/$max_num"
         git worktree remove "$target"
