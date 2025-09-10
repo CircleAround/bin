@@ -39,11 +39,19 @@ find_max_worktree_num() {
   local max_num=0
   [[ -d "$wroot" ]] || return 1
   
+  # Enable nullglob to handle case where no files match pattern
+  local nullglob_was_set=false
+  shopt -q nullglob && nullglob_was_set=true
+  shopt -s nullglob
+  
   for dir in "$wroot"/*; do
     [[ -d "$dir" ]] || continue
     local num=$(basename "$dir")
     [[ "$num" =~ ^[1-9]$ ]] && ((num > max_num)) && max_num=$num
   done
+  
+  # Restore original nullglob setting
+  $nullglob_was_set || shopt -u nullglob
   
   [[ $max_num -eq 0 ]] && return 1
   echo "$max_num"
