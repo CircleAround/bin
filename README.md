@@ -31,8 +31,10 @@ set AWS_MFA_SERIAL in your environment as your MFA Device(ex. in ~/.bash_profile
 
 ```
 export AWS_MFA_SERIAL=arn:aws:iam::111122223333:mfa/your-iam-user
-source aws-mfa.sh
+source aws-mfa.sh [duration-seconds]
 ```
+
+If duration-seconds is not specified, AWS default (12 hours) will be used.
 
 ## switch-role-with-mfa.sh
 switch role with MFA.
