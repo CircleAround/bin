@@ -18,12 +18,13 @@ branch="${1-}"
 root="$(git rev-parse --show-toplevel)"
 repo="$(basename "$root")"
 wroot="$root/../${repo}.worktrees"
-target="$wroot/$branch"
 
-# ④ 重複チェック
-if git worktree list --porcelain | grep -q "^worktree ${target}$"; then
-  echo "⚠️ 既に worktree が存在: $target"; exit 1; fi
-[[ -e $target ]] && { echo "⚠️ 既存ディレクトリがあります: $target"; exit 1; }
+# ④ 次の利用可能な番号を見つける
+next_num=1
+while [[ -e "$wroot/$next_num" ]]; do
+  ((next_num++))
+done
+target="$wroot/$next_num"
 
 mkdir -p "$wroot"
 
@@ -36,6 +37,11 @@ else
   git worktree add -b "$branch" "$target"
 fi
 
-echo "✅ Worktree 作成: $target"
+echo "✅ Worktree 作成: $target (ブランチ: $branch)"
 git worktree list
+
+# ⑥ 移動用コマンドを表示
+echo ""
+echo "📁 新しいディレクトリに移動するには:"
+echo "cd \"$target\""
 
