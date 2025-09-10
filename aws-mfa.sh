@@ -18,21 +18,21 @@ read -p "Enter MFA code (6 digits): " MFA_CODE
 
 echo "🔐 Getting session token using MFA..."
 
-# Build command
-STS_CMD="aws sts get-session-token \
-  --serial-number \"$AWS_MFA_SERIAL\" \
-  --token-code \"$MFA_CODE\" \
-  --profile \"$AWS_SOURCE_PROFILE\""
+# Build command arguments array
+AWS_CMD_ARGS=(sts get-session-token
+  --serial-number "$AWS_MFA_SERIAL"
+  --token-code "$MFA_CODE"
+  --profile "$AWS_SOURCE_PROFILE")
 
 # Add duration only if specified
 if [[ -n "$DURATION_SECONDS" ]]; then
-  STS_CMD="$STS_CMD --duration-seconds $DURATION_SECONDS"
+  AWS_CMD_ARGS+=(--duration-seconds "$DURATION_SECONDS")
   echo "⏱️  Using custom duration: ${DURATION_SECONDS} seconds"
 fi
 
-STS_CMD="$STS_CMD --output json 2>&1"
+AWS_CMD_ARGS+=(--output json)
 
-SESSION_JSON=$(eval "$STS_CMD") || {
+SESSION_JSON=$(aws "${AWS_CMD_ARGS[@]}" 2>&1) || {
   echo "❌ Failed to get session token."
   echo "$SESSION_JSON"
   return 1
