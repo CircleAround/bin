@@ -9,13 +9,102 @@ Usage: git-wt [command] [args]
 Commands:
   git-wt add <branch>  Create worktree with branch
   git-wt pop [num]     Remove worktree by number (defaults to highest)
+  git-wt               Show interactive menu
 
 Examples:
   git-wt add feature-x  Create worktree in directory "1" with branch "feature-x"
   git-wt pop            Remove highest numbered worktree
   git-wt pop 2          Remove worktree directory "2"
+  git-wt                Interactive menu with add/pop/help/exit options
 EOF
   exit 1
+}
+
+# Sanitize branch name to prevent injection attacks
+sanitize_branch_name() {
+  local branch="$1"
+  # Remove dangerous characters and validate
+  if [[ "$branch" =~ [^a-zA-Z0-9._/-] ]]; then
+    echo "❌ Branch name contains invalid characters. Use only: a-z A-Z 0-9 . _ / -" >&2
+    exit 1
+  fi
+  if [[ "$branch" =~ ^[.-] || "$branch" =~ [.-]$ || "$branch" =~ // ]]; then
+    echo "❌ Invalid branch name format" >&2
+    exit 1
+  fi
+}
+
+# Safely remove worktrees directory if it only contains numbered directories
+cleanup_worktrees_dir() {
+  [[ -d "$wroot" ]] || return 0
+  
+  # Check if directory contains only numbered directories (1-9) or is empty
+  local has_non_numbered=false
+  local has_anything=false
+  
+  for item in "$wroot"/*; do
+    [[ -e "$item" ]] || continue
+    has_anything=true
+    
+    local basename_item=$(basename "$item")
+    if [[ ! "$basename_item" =~ ^[1-9]$ ]] || [[ ! -d "$item" ]]; then
+      has_non_numbered=true
+      break
+    fi
+  done
+  
+  if [[ "$has_non_numbered" == true ]]; then
+    echo "⚠️ Cannot remove worktrees directory: contains non-numbered files/directories" >&2
+    echo "   Please manually clean: $wroot" >&2
+    return 1
+  elif [[ "$has_anything" == false ]]; then
+    # Directory is empty, safe to remove
+    rmdir "$wroot"
+    echo "🗑️ Removed empty worktrees directory: $wroot"
+    return 0
+  fi
+  
+  # Has numbered directories, don't remove
+  return 0
+}
+
+# Create new worktree with given branch name
+create_worktree() {
+  local branch="$1"
+  
+  # Sanitize branch name
+  sanitize_branch_name "$branch"
+  
+  # Find next available number (maximum 9)
+  local next_num=1
+  while [[ $next_num -le 9 && -e "$wroot/$next_num" ]]; do
+    ((next_num++))
+  done
+  
+  if [[ $next_num -gt 9 ]]; then
+    echo "❌ Maximum 9 worktrees allowed. Please remove one first with: git-wt pop" >&2
+    exit 1
+  fi
+  
+  local target="$wroot/$next_num"
+  mkdir -p "$wroot"
+  
+  # Track if branch exists remotely, otherwise create new
+  if git show-ref --verify --quiet "refs/heads/$branch"; then
+    git worktree add "$target" "$branch" || { rmdir "$target" 2>/dev/null; exit 1; }
+  elif git ls-remote --exit-code --heads origin "$branch" &>/dev/null; then
+    git worktree add "$target" "origin/$branch" || { rmdir "$target" 2>/dev/null; exit 1; }
+  else
+    git worktree add -b "$branch" "$target" || { rmdir "$target" 2>/dev/null; exit 1; }
+  fi
+  
+  echo "✅ Worktree created: $target (branch: $branch)"
+  git worktree list
+  
+  # Show command to navigate to new directory
+  echo ""
+  echo "📁 To navigate to the new directory:"
+  echo "cd \"$target\""
 }
 
 # ① Check if this is a Git repository
@@ -57,6 +146,10 @@ case "$command" in
     # Remove worktree
     git worktree remove "$target"
     echo "✅ Worktree removed: $target"
+    
+    # Safely cleanup worktrees directory
+    cleanup_worktrees_dir
+    
     git worktree list
     ;;
   add)
@@ -64,75 +157,27 @@ case "$command" in
     # add subcommand processing
     branch="${1-}"
     [[ -z "$branch" ]] && { echo "❌ Please specify branch name: git-wt add <branch>"; exit 1; }
-    
-    # Find next available number
-    next_num=1
-    while [[ -e "$wroot/$next_num" ]]; do
-      ((next_num++))
-    done
-    target="$wroot/$next_num"
-    
-    mkdir -p "$wroot"
-    
-    # Track if branch exists remotely, otherwise create new
-    if git show-ref --verify --quiet "refs/heads/$branch"; then
-      git worktree add "$target" "$branch"
-    elif git ls-remote --exit-code --heads origin "$branch" &>/dev/null; then
-      git worktree add "$target" "origin/$branch"
-    else
-      git worktree add -b "$branch" "$target"
-    fi
-    
-    echo "✅ Worktree created: $target (branch: $branch)"
-    git worktree list
-    
-    # Show command to navigate to new directory
-    echo ""
-    echo "📁 To navigate to the new directory:"
-    echo "cd \"$target\""
+    create_worktree "$branch"
     ;;
   "")
     # No arguments: show selection menu
     echo "Please select a command:"
     echo "1. add - Create new worktree"
     echo "2. pop - Remove existing worktree"
+    echo "3. help - Show usage information"
+    echo "4. exit - Quit without action"
     echo ""
-    read -rp "Choice [1-2]: " choice
+    read -rp "Choice [1-4]: " choice
     
     case "$choice" in
       1)
         read -rp "Enter branch name: " branch
         [[ -z "$branch" ]] && { echo "❌ Branch name is empty"; exit 1; }
-        
-        # Find next available number
-        next_num=1
-        while [[ -e "$wroot/$next_num" ]]; do
-          ((next_num++))
-        done
-        target="$wroot/$next_num"
-        
-        mkdir -p "$wroot"
-        
-        # Track if branch exists remotely, otherwise create new
-        if git show-ref --verify --quiet "refs/heads/$branch"; then
-          git worktree add "$target" "$branch"
-        elif git ls-remote --exit-code --heads origin "$branch" &>/dev/null; then
-          git worktree add "$target" "origin/$branch"
-        else
-          git worktree add -b "$branch" "$target"
-        fi
-        
-        echo "✅ Worktree created: $target (branch: $branch)"
-        git worktree list
-        
-        # 移動用コマンドを表示
-        echo ""
-        echo "📁 新しいディレクトリに移動するには:"
-        echo "cd \"$target\""
+        create_worktree "$branch"
         ;;
       2)
-        # worktree ディレクトリが存在するかチェック
-        [[ -d "$wroot" ]] || { echo "❌ worktree ディレクトリが存在しません: $wroot"; exit 1; }
+        # Check if worktree directory exists
+        [[ -d "$wroot" ]] || { echo "❌ Worktree directory does not exist: $wroot"; exit 1; }
         
         # Find maximum number
         max_num=0
@@ -146,7 +191,18 @@ case "$command" in
         target="$wroot/$max_num"
         git worktree remove "$target"
         echo "✅ Worktree removed: $target"
+        
+        # Safely cleanup worktrees directory
+        cleanup_worktrees_dir
+        
         git worktree list
+        ;;
+      3)
+        usage
+        ;;
+      4)
+        echo "👋 Goodbye!"
+        exit 0
         ;;
       *)
         echo "❌ Invalid selection"
