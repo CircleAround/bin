@@ -8,18 +8,31 @@ if [[ -z "${AWS_MFA_SERIAL:-}" ]]; then
   return 1
 fi
 
+# Duration parameter (optional)
+DURATION_SECONDS="${1:-}"
+
 AWS_SOURCE_PROFILE="${AWS_SOURCE_PROFILE:-${AWS_PROFILE:-default}}"
 echo "🔑 Using source profile: $AWS_SOURCE_PROFILE"
 
 read -p "Enter MFA code (6 digits): " MFA_CODE
 
 echo "🔐 Getting session token using MFA..."
-SESSION_JSON=$(aws sts get-session-token \
-  --serial-number "$AWS_MFA_SERIAL" \
-  --token-code "$MFA_CODE" \
-  --profile "$AWS_SOURCE_PROFILE" \
-  --duration-seconds 129600 \
-  --output json 2>&1) || {
+
+# Build command arguments array
+AWS_CMD_ARGS=('sts' 'get-session-token'
+  '--serial-number' "$AWS_MFA_SERIAL"
+  '--token-code' "$MFA_CODE"
+  '--profile' "$AWS_SOURCE_PROFILE")
+
+# Add duration only if specified
+if [[ -n "$DURATION_SECONDS" ]]; then
+  AWS_CMD_ARGS+=('--duration-seconds' "$DURATION_SECONDS")
+  echo "⏱️  Using custom duration: ${DURATION_SECONDS} seconds"
+fi
+
+AWS_CMD_ARGS+=('--output' 'json')
+
+SESSION_JSON=$(aws "${AWS_CMD_ARGS[@]}" 2>&1) || {
   echo "❌ Failed to get session token."
   echo "$SESSION_JSON"
   return 1
