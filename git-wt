@@ -181,20 +181,20 @@ case "$command" in
   "")
     # No arguments: show selection menu
     echo "Please select a command:"
-    echo "1. add - Create new worktree"
-    echo "2. pop - Remove existing worktree"
-    echo "3. help - Show usage information"
-    echo "4. exit - Quit without action"
+    echo "a. add - Create new worktree"
+    echo "p. pop - Remove existing worktree"
+    echo "h. help - Show usage information"
+    echo "q. quit - Quit without action"
     echo ""
-    read -rp "Choice [1-4]: " choice
+    read -rp "Choice [a/p/h/q]: " choice
     
     case "$choice" in
-      1)
+      a|A)
         read -rp "Enter branch name: " branch
         [[ -z "$branch" ]] && { echo "❌ Branch name is empty"; exit 1; }
         create_worktree "$branch"
         ;;
-      2)
+      p|P)
         # Check if worktree directory exists
         [[ -d "$wroot" ]] || { echo "❌ Worktree directory does not exist: $wroot"; exit 1; }
         
@@ -213,10 +213,10 @@ case "$command" in
         
         git worktree list
         ;;
-      3)
+      h|H)
         usage
         ;;
-      4)
+      q|Q)
         echo "👋 Goodbye!"
         exit 0
         ;;
