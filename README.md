@@ -17,9 +17,6 @@ After adding the PATH, reload your shell configuration:
 source ~/.bashrc  # or ~/.zshrc
 ```
 
-## docker-clean
-Remove unused Docker images
-
 ## git-wt
 Manage Git worktrees with sequential numbering in `../<repo>.worktrees/<number>` directories.
 
