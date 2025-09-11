@@ -2,6 +2,21 @@
 
 Utility commands by CIRCLE AROUND Inc.
 
+## Installation
+
+Add this directory to your PATH for easy access to all utilities:
+
+```bash
+# Add to ~/.bashrc, ~/.zshrc, or your shell's configuration file
+export PATH="$PATH:$HOME/CircleAround/bin"
+```
+
+After adding the PATH, reload your shell configuration:
+
+```bash
+source ~/.bashrc  # or ~/.zshrc
+```
+
 ## docker-clean
 Remove unused Docker images
 
