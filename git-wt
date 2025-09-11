@@ -180,6 +180,9 @@ case "$command" in
     ;;
   "")
     # No arguments: show selection menu
+    echo "📋 Current worktrees:"
+    git worktree list
+    echo ""
     echo "Please select a command:"
     echo "a. add - Create new worktree"
     echo "p. pop - Remove existing worktree"
