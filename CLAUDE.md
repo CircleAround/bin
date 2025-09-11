@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository Overview
 
-A collection of shell utility scripts for development and DevOps tasks developed by CIRCLE AROUND Inc. Contains standalone bash scripts for Docker operations, git workflow automation, AWS MFA authentication, and database operations via bastion servers.
+A collection of shell utility scripts for development and DevOps tasks developed by CIRCLE AROUND Inc. Contains standalone bash scripts for git workflow automation, AWS MFA authentication, and database operations via bastion servers.
 
 ## Architecture and Structure
 
@@ -14,7 +14,7 @@ Simple flat structure with individual executable scripts in the root directory:
 
 - **Git Utilities** (`git-remove-merged-branches`, `git-wt`): Automate git workflows. `git-wt` creates worktrees in `../<repo>.worktrees/<branch>` format.
 
-- **Docker Utilities** (`docker-clean`, `killport`): Manage Docker resources. `killport` handles both Docker containers and regular processes using the specified port.
+- **Port Management** (`killport`): Handles both Docker containers and regular processes using the specified port.
 
 - **Database Utilities** (`remote-bastion-dump`, `remote-bastion-dump-eb-pg`, `remote-cloud-sql-dump`): Execute database dumps via SSH bastion servers or Cloud SQL.
 
