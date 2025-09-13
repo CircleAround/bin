@@ -8,13 +8,14 @@ Usage: git-wt [command] [args]
 
 Commands:
   git-wt add <branch>  Create worktree with branch
-  git-wt pop [num]     Remove worktree by number (defaults to highest)
+  git-wt pop [num|.]   Remove worktree by number or current (defaults to highest)
   git-wt               Show interactive menu
 
 Examples:
   git-wt add feature-x  Create worktree in directory "1" with branch "feature-x"
   git-wt pop            Remove highest numbered worktree
   git-wt pop 2          Remove worktree directory "2"
+  git-wt pop .          Remove current worktree (if inside *.worktrees/[1-9])
   git-wt                Interactive menu with add/pop/help/exit options
 EOF
   exit 1
@@ -147,10 +148,30 @@ case "$command" in
     shift
     # pop subcommand processing
     target_num="${1-}"
-    
+
+    # Special case: "." means current worktree
+    if [[ "$target_num" == "." ]]; then
+      # Get current directory's absolute path
+      current_dir="$(pwd)"
+
+      # Check if we're in a worktree directory (*.worktrees/[1-9])
+      if [[ "$current_dir" =~ \.worktrees/([1-9])(/|$) ]]; then
+        target_num="${BASH_REMATCH[1]}"
+        echo "🔍 Detected current worktree: $target_num"
+
+        # Change to main repository before removing
+        cd "$root"
+        echo "📁 Changed to main repository: $root"
+      else
+        echo "❌ Current directory is not inside a numbered worktree (*.worktrees/[1-9])" >&2
+        echo "   Current path: $current_dir" >&2
+        exit 1
+      fi
+    fi
+
     # Check if worktree directory exists
     [[ -d "$wroot" ]] || { echo "❌ Worktree directory does not exist: $wroot"; exit 1; }
-    
+
     # If no number specified, find the maximum number
     if [[ -z "$target_num" ]]; then
       if ! target_num=$(find_max_worktree_num); then
@@ -158,17 +179,17 @@ case "$command" in
         exit 1
       fi
     fi
-    
+
     target="$wroot/$target_num"
     [[ -d "$target" ]] || { echo "❌ Worktree does not exist: $target"; exit 1; }
-    
+
     # Remove worktree
     git worktree remove "$target"
     echo "✅ Worktree removed: $target"
-    
+
     # Safely cleanup worktrees directory
     cleanup_worktrees_dir
-    
+
     git worktree list
     ;;
   add)
