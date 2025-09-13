@@ -57,6 +57,67 @@ find_max_worktree_num() {
   echo "$max_num"
 }
 
+# Check for uncommitted changes and ask for confirmation
+check_worktree_changes() {
+  local target="$1"
+
+  # Change to the worktree directory and check for differences
+  local has_changes=false
+
+  # Check if directory exists and is a git worktree
+  [[ -d "$target" ]] || return 0
+
+  # Save current directory and change to worktree
+  local original_pwd="$PWD"
+  cd "$target" || return 0
+
+  # Check for staged changes
+  if ! git diff --cached --quiet 2>/dev/null; then
+    has_changes=true
+  fi
+
+  # Check for unstaged changes
+  if ! git diff --quiet 2>/dev/null; then
+    has_changes=true
+  fi
+
+  # Check for untracked files
+  if [[ -n "$(git ls-files --others --exclude-standard 2>/dev/null)" ]]; then
+    has_changes=true
+  fi
+
+  # Return to original directory
+  cd "$original_pwd"
+
+  if [[ "$has_changes" == true ]]; then
+    echo "⚠️ The worktree has uncommitted changes:"
+    echo "   Location: $target"
+    echo ""
+
+    # Show the changes
+    cd "$target"
+    echo "📄 Current status:"
+    git status --short 2>/dev/null || true
+    cd "$original_pwd"
+    echo ""
+
+    # Ask for confirmation
+    read -rp "❓ Are you sure you want to remove this worktree? [y/N]: " confirm
+    case "$confirm" in
+      y|Y|yes|YES)
+        echo "🗑️ Proceeding with removal..."
+        return 0
+        ;;
+      *)
+        echo "❌ Removal cancelled"
+        return 1
+        ;;
+    esac
+  fi
+
+  return 0
+}
+
 # Safely remove worktrees directory if it only contains numbered directories
 cleanup_worktrees_dir() {
   [[ -d "$wroot" ]] || return 0
@@ -161,9 +222,16 @@ case "$command" in
     
     target="$wroot/$target_num"
     [[ -d "$target" ]] || { echo "❌ Worktree does not exist: $target"; exit 1; }
-    
-    # Remove worktree
-    git worktree remove "$target"
+
+    # Check for changes and ask for confirmation if needed
+    if ! check_worktree_changes "$target"; then
+      exit 1
+    fi
+
+    # Remove worktree (force removal if user confirmed despite changes)
+    if ! git worktree remove "$target" 2>/dev/null; then
+      git worktree remove --force "$target"
+    fi
     echo "✅ Worktree removed: $target"
     
     # Safely cleanup worktrees directory
@@ -208,7 +276,16 @@ case "$command" in
         fi
         
         target="$wroot/$max_num"
-        git worktree remove "$target"
+
+        # Check for changes and ask for confirmation if needed
+        if ! check_worktree_changes "$target"; then
+          exit 1
+        fi
+
+        # Remove worktree (force removal if user confirmed despite changes)
+        if ! git worktree remove "$target" 2>/dev/null; then
+          git worktree remove --force "$target"
+        fi
         echo "✅ Worktree removed: $target"
         
         # Safely cleanup worktrees directory
