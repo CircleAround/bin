@@ -34,6 +34,21 @@ git-wt pop 2
 git-wt
 ```
 
+### File Copy Configuration
+Create a `.git-wt.conf` file in your repository root to automatically copy specific files and directories from the main branch to new worktrees:
+
+```
+# .git-wt.conf
+README.md
+config/database.yml.example
+.env.example
+config/templates
+node_modules
+# Comments are supported
+```
+
+Files and directories listed in this configuration will be copied from the main branch to each new worktree, preserving directory structure. Missing files/directories are skipped with a warning message.
+
 ## git-remove-merged-branches
 Remove merged branches in current git directory.
 

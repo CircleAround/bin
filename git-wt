@@ -173,17 +173,25 @@ copy_files_to_worktree() {
 
     [[ -z "$file_path" ]] && continue
 
-    # Check if source file exists
+    # Check if source file or directory exists
     if [[ -f "$root/$file_path" ]]; then
       # Create directory structure in target
       mkdir -p "$target/$(dirname "$file_path")"
 
       # Copy file
       cp "$root/$file_path" "$target/$file_path"
-      echo "📄 Copied: $file_path"
+      echo "📄 Copied file: $file_path"
+      copied_count=$((copied_count + 1))
+    elif [[ -d "$root/$file_path" ]]; then
+      # Create parent directory structure in target
+      mkdir -p "$target/$(dirname "$file_path")"
+
+      # Copy directory recursively
+      cp -r "$root/$file_path" "$target/$file_path"
+      echo "📁 Copied directory: $file_path"
       copied_count=$((copied_count + 1))
     else
-      echo "⚠️ Warning: File not found, skipping: $file_path" >&2
+      echo "⚠️ Warning: File or directory not found, skipping: $file_path" >&2
     fi
   done < "$config_file"
 
