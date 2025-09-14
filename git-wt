@@ -152,27 +152,67 @@ cleanup_worktrees_dir() {
   return 0
 }
 
+# Copy files from main branch to worktree based on .git-wt.conf
+copy_files_to_worktree() {
+  local target="$1"
+  local config_file="$root/.git-wt.conf"
+
+  # Skip if config file doesn't exist
+  [[ -f "$config_file" ]] || return 0
+
+  local copied_count=0
+
+  # Read each line from config file
+  while IFS= read -r file_path || [[ -n "$file_path" ]]; do
+    # Skip empty lines and comments
+    [[ -z "$file_path" || "$file_path" =~ ^[[:space:]]*# ]] && continue
+
+    # Trim whitespace
+    file_path="${file_path#"${file_path%%[![:space:]]*}"}"
+    file_path="${file_path%"${file_path##*[![:space:]]}"}"
+
+    [[ -z "$file_path" ]] && continue
+
+    # Check if source file exists
+    if [[ -f "$root/$file_path" ]]; then
+      # Create directory structure in target
+      mkdir -p "$target/$(dirname "$file_path")"
+
+      # Copy file
+      cp "$root/$file_path" "$target/$file_path"
+      echo "📄 Copied: $file_path"
+      copied_count=$((copied_count + 1))
+    else
+      echo "⚠️ Warning: File not found, skipping: $file_path" >&2
+    fi
+  done < "$config_file"
+
+  if [[ $copied_count -gt 0 ]]; then
+    echo "✅ Copied $copied_count files from configuration"
+  fi
+}
+
 # Create new worktree with given branch name
 create_worktree() {
   local branch="$1"
-  
+
   # Sanitize branch name
   sanitize_branch_name "$branch"
-  
+
   # Find next available number (maximum 9)
   local next_num=1
   while [[ $next_num -le 9 && -e "$wroot/$next_num" ]]; do
     ((next_num++))
   done
-  
+
   if [[ $next_num -gt 9 ]]; then
     echo "❌ Maximum 9 worktrees allowed. Please remove one first with: git-wt pop" >&2
     exit 1
   fi
-  
+
   local target="$wroot/$next_num"
   mkdir -p "$wroot"
-  
+
   # Track if branch exists remotely, otherwise create new
   if git show-ref --verify --quiet "refs/heads/$branch"; then
     git worktree add "$target" "$branch" || { rmdir "$target" 2>/dev/null; exit 1; }
@@ -181,10 +221,14 @@ create_worktree() {
   else
     git worktree add -b "$branch" "$target" || { rmdir "$target" 2>/dev/null; exit 1; }
   fi
-  
+
   echo "✅ Worktree created: $target (branch: $branch)"
+
+  # Copy files from configuration
+  copy_files_to_worktree "$target"
+
   git worktree list
-  
+
   # Show command to navigate to new directory
   echo ""
   echo "📁 To navigate to the new directory:"
