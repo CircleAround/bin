@@ -270,7 +270,8 @@ git rev-parse --is-inside-work-tree &>/dev/null || {
 git_dir="$(git rev-parse --absolute-git-dir)"
 root="$(dirname "$git_dir")"
 repo="$(basename "$root")"
-wroot="$root/../${repo}.worktrees"
+# Normalize the wroot path by using cd and pwd
+wroot="$(cd "$root/.." && pwd)/${repo}.worktrees"
 
 # ③ Subcommand processing
 command="${1-}"
