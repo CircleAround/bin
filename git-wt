@@ -305,11 +305,13 @@ case "$command" in
     echo ""
     echo "Please select a command:"
 
-    # Show numbered worktrees for clipboard copy
+    # Collect available worktree numbers
+    available_nums=()
     if [[ -d "$wroot" ]]; then
       for num in {1..9}; do
         if [[ -d "$wroot/$num" ]]; then
           echo "$num. Copy cd command to worktree $num"
+          available_nums+=("$num")
         fi
       done
     fi
@@ -319,7 +321,14 @@ case "$command" in
     echo "h. help - Show usage information"
     echo "q. quit - Quit without action"
     echo ""
-    read -rp "Choice [1-9/a/p/h/q]: " choice
+
+    # Build choice prompt dynamically
+    choice_options="a/p/h/q"
+    if [[ ${#available_nums[@]} -gt 0 ]]; then
+      num_options=$(IFS=/; echo "${available_nums[*]}")
+      choice_options="$num_options/$choice_options"
+    fi
+    read -rp "Choice [$choice_options]: " choice
 
     case "$choice" in
       [1-9])
