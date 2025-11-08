@@ -30,24 +30,48 @@ git-wt pop
 # Remove specific worktree by number
 git-wt pop 2
 
+# Copy cd command to clipboard (macOS)
+git-wt goto 0   # Main repository
+git-wt goto 1   # Worktree 1
+
 # Show interactive menu
 git-wt
 ```
+
+### Interactive Menu
+The interactive menu provides quick navigation:
+- `0-9`: Copy cd command to clipboard for main repo (0) or worktrees (1-9)
+- `a`: Add new worktree
+- `p`: Pop (remove) highest numbered worktree
+- `h`: Show help
+- `q`: Quit
 
 ### File Copy Configuration
 Create a `.git-wt.conf` file in your repository root to automatically copy specific files and directories from the main branch to new worktrees:
 
 ```
 # .git-wt.conf
-README.md
-config/database.yml.example
-.env.example
-config/templates
-node_modules
+.env
+.env.local
+config/secrets.yml
+data
 # Comments are supported
 ```
 
 Files and directories listed in this configuration will be copied from the main branch to each new worktree, preserving directory structure. Missing files/directories are skipped with a warning message.
+
+## git-wt-sync
+Sync files from main repository to current worktree based on `.git-wt.conf`.
+
+This command is useful when you create a worktree manually (not via `git-wt add`) and want to copy configured files afterward.
+
+```bash
+# From within a worktree directory
+cd ../myrepo.worktrees/1
+git-wt-sync
+```
+
+The command reads `.git-wt.conf` from the current worktree and copies the listed files/directories from the main repository.
 
 ## git-remove-merged-branches
 Remove merged branches in current git directory.
