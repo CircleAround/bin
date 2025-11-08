@@ -304,14 +304,40 @@ case "$command" in
     git worktree list
     echo ""
     echo "Please select a command:"
+
+    # Show numbered worktrees for clipboard copy
+    if [[ -d "$wroot" ]]; then
+      for num in {1..9}; do
+        if [[ -d "$wroot/$num" ]]; then
+          echo "$num. Copy cd command to worktree $num"
+        fi
+      done
+    fi
+
     echo "a. add - Create new worktree"
     echo "p. pop - Remove existing worktree"
     echo "h. help - Show usage information"
     echo "q. quit - Quit without action"
     echo ""
-    read -rp "Choice [a/p/h/q]: " choice
-    
+    read -rp "Choice [1-9/a/p/h/q]: " choice
+
     case "$choice" in
+      [1-9])
+        # Copy cd command to clipboard
+        if [[ -d "$wroot/$choice" ]]; then
+          cd_command="cd \"$wroot/$choice\""
+          if command -v pbcopy &>/dev/null; then
+            echo "$cd_command" | pbcopy
+            echo "✅ Copied to clipboard: $cd_command"
+          else
+            echo "⚠️ pbcopy not found (macOS only feature)"
+            echo "Command: $cd_command"
+          fi
+        else
+          echo "❌ Worktree $choice does not exist"
+          exit 1
+        fi
+        ;;
       a|A)
         read -rp "Enter branch name: " branch
         [[ -z "$branch" ]] && { echo "❌ Branch name is empty"; exit 1; }
@@ -320,13 +346,13 @@ case "$command" in
       p|P)
         # Check if worktree directory exists
         [[ -d "$wroot" ]] || { echo "❌ Worktree directory does not exist: $wroot"; exit 1; }
-        
+
         # Find maximum number
         if ! max_num=$(find_max_worktree_num); then
           echo "❌ No removable worktree found"
           exit 1
         fi
-        
+
         target="$wroot/$max_num"
 
         # Check for changes and ask for confirmation if needed
@@ -339,10 +365,10 @@ case "$command" in
           git worktree remove --force "$target"
         fi
         echo "✅ Worktree removed: $target"
-        
+
         # Safely cleanup worktrees directory
         cleanup_worktrees_dir
-        
+
         git worktree list
         ;;
       h|H)
