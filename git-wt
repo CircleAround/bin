@@ -354,16 +354,18 @@ case "$command" in
     declare -A worktree_paths
     available_nums=()
     next_manual_num=50
+    is_first=true
 
     while IFS= read -r line; do
       # Extract path (first field before double spaces)
       wt_path=$(echo "$line" | awk '{print $1}')
 
       # Check if this is main repository (first entry)
-      if [[ ${#worktree_paths[@]} -eq 0 ]]; then
+      if [[ "$is_first" == "true" ]]; then
         worktree_paths[0]="$wt_path"
         echo "0. goto - $line"
         available_nums+=(0)
+        is_first=false
       # Check if path matches our worktree pattern: ../<repo>.worktrees/<num>
       elif [[ "$wt_path" =~ $wroot/([0-9])$ ]]; then
         num="${BASH_REMATCH[1]}"
