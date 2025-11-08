@@ -310,7 +310,7 @@ case "$command" in
     if [[ -d "$wroot" ]]; then
       for num in {1..9}; do
         if [[ -d "$wroot/$num" ]]; then
-          echo "$num. Copy cd command to worktree $num"
+          echo "$num. goto - Copy cd command to worktree $num"
           available_nums+=("$num")
         fi
       done
