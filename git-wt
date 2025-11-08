@@ -324,7 +324,7 @@ case "$command" in
     target_num="${1-}"
     [[ -z "$target_num" ]] && { echo "❌ Please specify number: git-wt goto <num>"; exit 1; }
 
-    # Validate number
+    # Validate number (0-9 only for git-wt managed worktrees)
     if [[ ! "$target_num" =~ ^[0-9]$ ]]; then
       echo "❌ Invalid number. Use 0 for main repository, or 1-9 for worktrees"
       exit 1
@@ -334,7 +334,7 @@ case "$command" in
       # Go to main repository
       copy_cd_command "$root"
     else
-      # Go to worktree
+      # Go to git-wt managed worktree
       target="$wroot/$target_num"
       if [[ ! -d "$target" ]]; then
         echo "❌ Worktree $target_num does not exist: $target"
@@ -350,20 +350,36 @@ case "$command" in
     echo ""
     echo "Please select a command:"
 
-    # Show option to go to main repository
-    echo "0. goto - Copy cd command to main repository"
+    # Parse git worktree list and assign numbers
+    declare -A worktree_paths
+    available_nums=()
+    next_manual_num=50
 
-    # Collect available worktree numbers
-    available_nums=(0)
-    if [[ -d "$wroot" ]]; then
-      for num in {1..9}; do
-        if [[ -d "$wroot/$num" ]]; then
-          echo "$num. goto - Copy cd command to worktree $num"
-          available_nums+=("$num")
-        fi
-      done
-    fi
+    while IFS= read -r line; do
+      # Extract path (first field before double spaces)
+      wt_path=$(echo "$line" | awk '{print $1}')
 
+      # Check if this is main repository (first entry)
+      if [[ ${#worktree_paths[@]} -eq 0 ]]; then
+        worktree_paths[0]="$wt_path"
+        echo "0. goto - $line"
+        available_nums+=(0)
+      # Check if path matches our worktree pattern: ../<repo>.worktrees/<num>
+      elif [[ "$wt_path" =~ $wroot/([0-9])$ ]]; then
+        num="${BASH_REMATCH[1]}"
+        worktree_paths[$num]="$wt_path"
+        echo "$num. goto - $line"
+        available_nums+=("$num")
+      else
+        # Manual worktree, assign number 50+
+        worktree_paths[$next_manual_num]="$wt_path"
+        echo "$next_manual_num. goto - $line"
+        available_nums+=("$next_manual_num")
+        ((next_manual_num++))
+      fi
+    done < <(git worktree list)
+
+    echo ""
     echo "a. add - Create new worktree"
     echo "p. pop - Remove existing worktree"
     echo "h. help - Show usage information"
@@ -379,14 +395,10 @@ case "$command" in
     read -rp "Choice [$choice_options]: " choice
 
     case "$choice" in
-      0)
-        # Copy cd command to main repository
-        copy_cd_command "$root"
-        ;;
-      [1-9])
-        # Copy cd command to clipboard
-        if [[ -d "$wroot/$choice" ]]; then
-          copy_cd_command "$wroot/$choice"
+      [0-9]|[0-9][0-9])
+        # Copy cd command for any numbered worktree
+        if [[ -n "${worktree_paths[$choice]}" ]]; then
+          copy_cd_command "${worktree_paths[$choice]}"
         else
           echo "❌ Worktree $choice does not exist"
           exit 1
