@@ -246,6 +246,20 @@ create_worktree() {
   echo "cd \"$target\""
 }
 
+# Copy cd command to clipboard
+copy_cd_command() {
+  local path="$1"
+  local cd_command="cd \"$path\""
+
+  if command -v pbcopy &>/dev/null; then
+    echo "$cd_command" | pbcopy
+    echo "✅ Copied to clipboard: $cd_command"
+  else
+    echo "⚠️ pbcopy not found (macOS only feature)"
+    echo "Command: $cd_command"
+  fi
+}
+
 # ① Check if this is a Git repository
 git rev-parse --is-inside-work-tree &>/dev/null || {
   echo "❌ Not a Git repository" >&2; exit 1; }
@@ -318,14 +332,7 @@ case "$command" in
 
     if [[ "$target_num" == "0" ]]; then
       # Go to main repository
-      cd_command="cd \"$root\""
-      if command -v pbcopy &>/dev/null; then
-        echo "$cd_command" | pbcopy
-        echo "✅ Copied to clipboard: $cd_command"
-      else
-        echo "⚠️ pbcopy not found (macOS only feature)"
-        echo "Command: $cd_command"
-      fi
+      copy_cd_command "$root"
     else
       # Go to worktree
       target="$wroot/$target_num"
@@ -333,15 +340,7 @@ case "$command" in
         echo "❌ Worktree $target_num does not exist: $target"
         exit 1
       fi
-
-      cd_command="cd \"$target\""
-      if command -v pbcopy &>/dev/null; then
-        echo "$cd_command" | pbcopy
-        echo "✅ Copied to clipboard: $cd_command"
-      else
-        echo "⚠️ pbcopy not found (macOS only feature)"
-        echo "Command: $cd_command"
-      fi
+      copy_cd_command "$target"
     fi
     ;;
   "")
@@ -382,26 +381,12 @@ case "$command" in
     case "$choice" in
       0)
         # Copy cd command to main repository
-        cd_command="cd \"$root\""
-        if command -v pbcopy &>/dev/null; then
-          echo "$cd_command" | pbcopy
-          echo "✅ Copied to clipboard: $cd_command"
-        else
-          echo "⚠️ pbcopy not found (macOS only feature)"
-          echo "Command: $cd_command"
-        fi
+        copy_cd_command "$root"
         ;;
       [1-9])
         # Copy cd command to clipboard
         if [[ -d "$wroot/$choice" ]]; then
-          cd_command="cd \"$wroot/$choice\""
-          if command -v pbcopy &>/dev/null; then
-            echo "$cd_command" | pbcopy
-            echo "✅ Copied to clipboard: $cd_command"
-          else
-            echo "⚠️ pbcopy not found (macOS only feature)"
-            echo "Command: $cd_command"
-          fi
+          copy_cd_command "$wroot/$choice"
         else
           echo "❌ Worktree $choice does not exist"
           exit 1
