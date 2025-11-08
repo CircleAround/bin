@@ -9,12 +9,15 @@ Usage: git-wt [command] [args]
 Commands:
   git-wt add <branch>  Create worktree with branch
   git-wt pop [num]     Remove worktree by number (defaults to highest)
+  git-wt goto <num>    Copy cd command to clipboard (0=main, 1-9=worktree)
   git-wt               Show interactive menu
 
 Examples:
   git-wt add feature-x  Create worktree in directory "1" with branch "feature-x"
   git-wt pop            Remove highest numbered worktree
   git-wt pop 2          Remove worktree directory "2"
+  git-wt goto 0         Copy cd command to main repository
+  git-wt goto 1         Copy cd command to worktree 1
   git-wt                Interactive menu with add/pop/help/exit options
 EOF
   exit 1
@@ -298,6 +301,46 @@ case "$command" in
     [[ -z "$branch" ]] && { echo "❌ Please specify branch name: git-wt add <branch>"; exit 1; }
     create_worktree "$branch"
     ;;
+  goto)
+    shift
+    # goto subcommand processing
+    target_num="${1-}"
+    [[ -z "$target_num" ]] && { echo "❌ Please specify number: git-wt goto <num>"; exit 1; }
+
+    # Validate number
+    if [[ ! "$target_num" =~ ^[0-9]$ ]]; then
+      echo "❌ Invalid number. Use 0 for main repository, or 1-9 for worktrees"
+      exit 1
+    fi
+
+    if [[ "$target_num" == "0" ]]; then
+      # Go to main repository
+      cd_command="cd \"$root\""
+      if command -v pbcopy &>/dev/null; then
+        echo "$cd_command" | pbcopy
+        echo "✅ Copied to clipboard: $cd_command"
+      else
+        echo "⚠️ pbcopy not found (macOS only feature)"
+        echo "Command: $cd_command"
+      fi
+    else
+      # Go to worktree
+      target="$wroot/$target_num"
+      if [[ ! -d "$target" ]]; then
+        echo "❌ Worktree $target_num does not exist: $target"
+        exit 1
+      fi
+
+      cd_command="cd \"$target\""
+      if command -v pbcopy &>/dev/null; then
+        echo "$cd_command" | pbcopy
+        echo "✅ Copied to clipboard: $cd_command"
+      else
+        echo "⚠️ pbcopy not found (macOS only feature)"
+        echo "Command: $cd_command"
+      fi
+    fi
+    ;;
   "")
     # No arguments: show selection menu
     echo "📋 Current worktrees:"
@@ -305,8 +348,11 @@ case "$command" in
     echo ""
     echo "Please select a command:"
 
+    # Show option to go to main repository
+    echo "0. goto - Copy cd command to main repository"
+
     # Collect available worktree numbers
-    available_nums=()
+    available_nums=(0)
     if [[ -d "$wroot" ]]; then
       for num in {1..9}; do
         if [[ -d "$wroot/$num" ]]; then
@@ -331,6 +377,17 @@ case "$command" in
     read -rp "Choice [$choice_options]: " choice
 
     case "$choice" in
+      0)
+        # Copy cd command to main repository
+        cd_command="cd \"$root\""
+        if command -v pbcopy &>/dev/null; then
+          echo "$cd_command" | pbcopy
+          echo "✅ Copied to clipboard: $cd_command"
+        else
+          echo "⚠️ pbcopy not found (macOS only feature)"
+          echo "Command: $cd_command"
+        fi
+        ;;
       [1-9])
         # Copy cd command to clipboard
         if [[ -d "$wroot/$choice" ]]; then
