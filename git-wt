@@ -364,19 +364,19 @@ case "$command" in
       # Check if this is main repository (first entry)
       if [[ "$is_first" == "true" ]]; then
         worktree_paths[0]="$wt_path"
-        echo "0. goto - $line"
+        echo "0. Copy 'cd $wt_path' to clipboard"
         available_nums+=(0)
         is_first=false
       # Check if path matches our worktree pattern: ../<repo>.worktrees/<num>
       elif [[ "$wt_path" =~ $wroot/([0-9])$ ]]; then
         num="${BASH_REMATCH[1]}"
         worktree_paths[$num]="$wt_path"
-        echo "$num. goto - $line"
+        echo "$num. Copy 'cd $wt_path' to clipboard"
         available_nums+=("$num")
       else
         # Manual worktree, assign number 50+
         worktree_paths[$next_manual_num]="$wt_path"
-        echo "$next_manual_num. goto - $line"
+        echo "$next_manual_num. Copy 'cd $wt_path' to clipboard"
         available_nums+=("$next_manual_num")
         ((next_manual_num++))
       fi
