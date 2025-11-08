@@ -1,0 +1,130 @@
+#!/usr/bin/env bash
+# git-wt-sync - sync files from main repo to worktree based on .git-wt.conf
+set -euo pipefail
+
+usage() {
+  cat << 'EOF'
+Usage: git-wt-sync
+
+Syncs files from the main repository to the current worktree based on .git-wt.conf
+
+This command should be run from within a git worktree directory.
+It reads .git-wt.conf from the main repository and copies the listed
+files/directories to the current worktree.
+
+Examples:
+  cd ../myrepo.worktrees/1
+  git-wt-sync              # Copy files from main repo to current worktree
+
+Configuration:
+  Create .git-wt.conf in your main repository root with file/directory paths:
+    .env
+    .env.local
+    config/secrets.yml
+EOF
+  exit 1
+}
+
+# Copy files from main branch to current directory based on .git-wt.conf
+sync_files() {
+  local main_repo="$1"
+  local worktree_dir="$PWD"
+  local config_file="$worktree_dir/.git-wt.conf"
+
+  # Skip if config file doesn't exist
+  if [[ ! -f "$config_file" ]]; then
+    echo "⚠️ Configuration file not found: $config_file"
+    echo "Create .git-wt.conf in your repository to specify files to sync"
+    exit 1
+  fi
+
+  local copied_count=0
+
+  echo "📋 Reading configuration from: $config_file"
+  echo "📂 Copying from: $main_repo"
+  echo "📁 Copying to: $worktree_dir"
+  echo ""
+
+  # Read each line from config file
+  while IFS= read -r file_path || [[ -n "$file_path" ]]; do
+    # Skip empty lines and comments
+    [[ -z "$file_path" || "$file_path" =~ ^[[:space:]]*# ]] && continue
+
+    # Trim whitespace
+    file_path="${file_path#"${file_path%%[![:space:]]*}"}"
+    file_path="${file_path%"${file_path##*[![:space:]]}"}"
+
+    [[ -z "$file_path" ]] && continue
+
+    # Remove leading ./ if present
+    file_path="${file_path#./}"
+
+    # Check if source file or directory exists
+    if [[ -f "$main_repo/$file_path" ]]; then
+      # Create directory structure in target
+      mkdir -p "$worktree_dir/$(dirname "$file_path")"
+
+      # Copy file
+      cp "$main_repo/$file_path" "$worktree_dir/$file_path"
+      echo "📄 Copied file: $main_repo/$file_path → $file_path"
+      copied_count=$((copied_count + 1))
+    elif [[ -d "$main_repo/$file_path" ]]; then
+      # Create parent directory structure in target
+      mkdir -p "$worktree_dir/$(dirname "$file_path")"
+
+      # Copy directory recursively
+      cp -r "$main_repo/$file_path" "$worktree_dir/$file_path"
+      echo "📁 Copied directory: $main_repo/$file_path → $file_path"
+      copied_count=$((copied_count + 1))
+    else
+      echo "⚠️ Warning: Not found in main repo, skipping: $main_repo/$file_path" >&2
+    fi
+  done < "$config_file"
+
+  echo ""
+  if [[ $copied_count -gt 0 ]]; then
+    echo "✅ Copied $copied_count item(s) from main repository"
+  else
+    echo "⚠️ No files were copied"
+  fi
+}
+
+# Handle help flag
+case "${1-}" in
+  -h|--help) usage ;;
+esac
+
+# Check if this is a Git repository
+git rev-parse --is-inside-work-tree &>/dev/null || {
+  echo "❌ Not a Git repository" >&2
+  exit 1
+}
+
+# Get the main repository path
+# Use git-common-dir to find the main repo's .git directory, then get its parent
+git_common_dir="$(git rev-parse --git-common-dir)"
+main_repo="$(dirname "$git_common_dir")"
+
+# Check if we're in a worktree by comparing the git directory
+git_common_dir="$(git rev-parse --git-common-dir)"
+git_dir="$(git rev-parse --git-dir)"
+
+# If git-common-dir and git-dir are different, we're in a worktree
+if [[ "$git_common_dir" == "$git_dir" ]]; then
+  echo "⚠️ You appear to be in the main repository, not a worktree"
+  echo "This command is intended to be run from within a worktree directory"
+  echo ""
+  read -rp "Do you want to continue anyway? [y/N]: " confirm
+  case "$confirm" in
+    y|Y|yes|YES)
+      echo "Proceeding..."
+      ;;
+    *)
+      echo "❌ Cancelled"
+      exit 1
+      ;;
+  esac
+fi
+
+# Sync files
+sync_files "$main_repo"
