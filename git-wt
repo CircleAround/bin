@@ -124,34 +124,57 @@ check_worktree_changes() {
 # Safely remove worktrees directory if it only contains numbered directories
 cleanup_worktrees_dir() {
   [[ -d "$wroot" ]] || return 0
-  
+
   # Check if directory contains only numbered directories (1-9) or is empty
   local has_non_numbered=false
   local has_anything=false
-  
+  local non_numbered_items=()
+
+  # Enable dotglob to include hidden files
+  local dotglob_was_set=false
+  shopt -q dotglob && dotglob_was_set=true
+  shopt -s dotglob
+
   for item in "$wroot"/*; do
     [[ -e "$item" ]] || continue
     has_anything=true
-    
+
     local basename_item=$(basename "$item")
     if [[ ! "$basename_item" =~ ^[1-9]$ ]] || [[ ! -d "$item" ]]; then
       has_non_numbered=true
-      break
+      non_numbered_items+=("$basename_item")
     fi
   done
-  
+
+  # Restore original dotglob setting
+  $dotglob_was_set || shopt -u dotglob
+
   if [[ "$has_non_numbered" == true ]]; then
-    echo "⚠️ Cannot remove worktrees directory: contains non-numbered files/directories" >&2
-    echo "   Please manually clean: $wroot" >&2
-    return 1
+    echo "⚠️ Worktrees directory contains non-numbered files/directories:" >&2
+    for item in "${non_numbered_items[@]}"; do
+      echo "   - $item" >&2
+    done
+    echo "" >&2
+    read -rp "🗑️ Remove worktrees directory and all contents? [y/N]: " confirm
+    case "$confirm" in
+      y|Y|yes|YES)
+        rm -rf "$wroot"
+        echo "✅ Removed worktrees directory: $wroot"
+        return 0
+        ;;
+      *)
+        echo "⚠️ Worktrees directory kept: $wroot" >&2
+        return 1
+        ;;
+    esac
   elif [[ "$has_anything" == false ]]; then
-    # Directory is empty, safe to remove
-    rmdir "$wroot"
+    # Directory is empty
+    rmdir "$wroot" 2>/dev/null
     echo "🗑️ Removed empty worktrees directory: $wroot"
     return 0
   fi
-  
-  # Has numbered directories, don't remove
+
+  # Has numbered directories only, don't remove
   return 0
 }
 
@@ -240,10 +263,19 @@ create_worktree() {
 
   git worktree list
 
-  # Show command to navigate to new directory
+  # Ask if user wants to copy cd command to clipboard
   echo ""
-  echo "📁 To navigate to the new directory:"
-  echo "cd \"$target\""
+  echo "📁 To navigate to the new directory: cd \"$target\""
+  read -rp "📋 Copy cd command to clipboard? [Y/n]: " copy_confirm
+  case "$copy_confirm" in
+    n|N|no|NO)
+      # Don't copy
+      ;;
+    *)
+      # Copy to clipboard (default is yes)
+      copy_cd_command "$target"
+      ;;
+  esac
 }
 
 # Copy cd command to clipboard
