@@ -1,89 +1,207 @@
 #!/usr/bin/env bash
-# git-wt-sync - sync files from main repo to worktree based on .git-wt.conf
+# git-wt-sync - sync files from .git-wt/ templates to current worktree
 set -euo pipefail
 
 usage() {
   cat << 'EOF'
 Usage: git-wt-sync
 
-Syncs files from the main repository to the current worktree based on .git-wt.conf
+Syncs template files to the current worktree with variable substitution.
 
 This command should be run from within a git worktree directory.
-It reads .git-wt.conf from the main repository and copies the listed
-files/directories to the current worktree.
+It finds .git-wt/ templates (repository-local or global) and copies them
+to the current worktree.
+
+Template locations (in priority order):
+  1. <repo>/.git-wt/           - Repository-local templates
+  2. ~/.git-wt/<owner>/<repo>/ - Global templates
+
+Supported variables:
+  {{WORKTREE_NUM}}  - Worktree number (1-9)
+  {{BRANCH}}        - Current branch name
+  {{REPO}}          - Repository name
+  {{WORKTREE_PATH}} - Absolute path to worktree
 
 Examples:
   cd ../myrepo.worktrees/1
-  git-wt-sync              # Copy files from main repo to current worktree
-
-Configuration:
-  Create .git-wt.conf in your main repository root with file/directory paths:
-    .env
-    .env.local
-    config/secrets.yml
+  git-wt-sync              # Copy templates to current worktree
 EOF
   exit 1
 }
 
-# Copy files from main branch to current directory based on .git-wt.conf
+# Get owner/repo from git remote URL
+get_remote_repo_path() {
+  local remote_url
+  remote_url=$(git remote get-url origin 2>/dev/null) || return 1
+
+  # Extract owner/repo from various URL formats:
+  # git@github.com:owner/repo.git
+  # https://github.com/owner/repo.git
+  # https://github.com/owner/repo
+  if [[ "$remote_url" =~ [:/]([^/:]+)/([^/]+)$ ]]; then
+    local owner="${BASH_REMATCH[1]}"
+    local repo="${BASH_REMATCH[2]}"
+    # Remove .git suffix if present
+    repo="${repo%.git}"
+    echo "$owner/$repo"
+  else
+    return 1
+  fi
+}
+
+# Find templates directory (repo-local or global)
+find_templates_dir() {
+  local main_repo="$1"
+  local repo_name="$2"
+  local repo_templates="$main_repo/.git-wt"
+
+  if [[ -d "$repo_templates" ]]; then
+    echo "$repo_templates"
+    return 0
+  fi
+
+  # Try global templates with owner/repo structure
+  local remote_path
+  if remote_path=$(get_remote_repo_path); then
+    local global_templates="$HOME/.git-wt/$remote_path"
+    if [[ -d "$global_templates" ]]; then
+      echo "$global_templates"
+      return 0
+    fi
+  fi
+
+  return 1
+}
+
+# Evaluate arithmetic expression with WORKTREE_NUM
+# Supports: {{WORKTREE_NUM + N}}, {{WORKTREE_NUM - N}}, {{WORKTREE_NUM * N}}, {{WORKTREE_NUM / N}}, {{WORKTREE_NUM % N}}
+eval_worktree_expr() {
+  local expr="$1"
+  local worktree_num="$2"
+
+  # Extract operator and operand: "WORKTREE_NUM + 3000" -> "+" and "3000"
+  if [[ "$expr" =~ ^WORKTREE_NUM[[:space:]]*([+*/%\-])[[:space:]]*([0-9]+)$ ]]; then
+    local op="${BASH_REMATCH[1]}"
+    local num="${BASH_REMATCH[2]}"
+    echo $((worktree_num $op num))
+  else
+    return 1
+  fi
+}
+
+# Substitute template variables in a file
+substitute_template_variables() {
+  local file="$1"
+  local worktree_num="$2"
+  local branch="$3"
+  local worktree_path="$4"
+  local repo_name="$5"
+
+  # Skip if file doesn't exist or is a directory
+  [[ -f "$file" ]] || return 0
+
+  # Create temporary file for substitution
+  local temp_file="${file}.tmp"
+
+  # First pass: simple variable substitutions
+  sed \
+    -e "s|{{WORKTREE_NUM}}|${worktree_num}|g" \
+    -e "s|{{BRANCH}}|${branch}|g" \
+    -e "s|{{REPO}}|${repo_name}|g" \
+    -e "s|{{WORKTREE_PATH}}|${worktree_path}|g" \
+    "$file" > "$temp_file"
+
+  # Second pass: arithmetic expressions {{WORKTREE_NUM + N}}
+  local content
+  content=$(<"$temp_file")
+
+  # Find and replace all arithmetic expressions
+  while [[ "$content" =~ \{\{(WORKTREE_NUM[[:space:]]*[+*/%\-][[:space:]]*[0-9]+)\}\} ]]; do
+    local full_match="${BASH_REMATCH[0]}"
+    local expr="${BASH_REMATCH[1]}"
+    local result
+    if result=$(eval_worktree_expr "$expr" "$worktree_num"); then
+      content="${content//$full_match/$result}"
+    else
+      break
+    fi
+  done
+
+  echo "$content" > "$temp_file"
+
+  # Replace original file with substituted version
+  mv "$temp_file" "$file"
+}
+
+# Sync files from templates to current directory
 sync_files() {
   local main_repo="$1"
+  local repo_name="$2"
   local worktree_dir="$PWD"
-  local config_file="$worktree_dir/.git-wt.conf"
 
-  # Skip if config file doesn't exist
-  if [[ ! -f "$config_file" ]]; then
-    echo "⚠️ Configuration file not found: $config_file"
-    echo "Create .git-wt.conf in your repository to specify files to sync"
+  # Find templates directory
+  local templates_dir
+  if ! templates_dir=$(find_templates_dir "$main_repo" "$repo_name"); then
+    echo "⚠️ No templates found"
+    echo "Create .git-wt/ directory in your repository or ~/.git-wt/<owner>/<repo>/"
     exit 1
   fi
 
-  local copied_count=0
+  # Detect worktree number from path
+  local worktree_num="0"
+  if [[ "$worktree_dir" =~ /([1-9])$ ]]; then
+    worktree_num="${BASH_REMATCH[1]}"
+  fi
 
-  echo "📋 Reading configuration from: $config_file"
-  echo "📂 Copying from: $main_repo"
+  # Get current branch
+  local branch
+  branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null) || branch="unknown"
+
+  local is_global=false
+  [[ "$templates_dir" == "$HOME/.git-wt/"* ]] && is_global=true
+
+  if [[ "$is_global" == true ]]; then
+    echo "📂 Using global templates: $templates_dir"
+  else
+    echo "📂 Using repo templates: $templates_dir"
+  fi
   echo "📁 Copying to: $worktree_dir"
   echo ""
 
-  # Read each line from config file
-  while IFS= read -r file_path || [[ -n "$file_path" ]]; do
-    # Skip empty lines and comments
-    [[ -z "$file_path" || "$file_path" =~ ^[[:space:]]*# ]] && continue
+  local copied_count=0
 
-    # Trim whitespace
-    file_path="${file_path#"${file_path%%[![:space:]]*}"}"
-    file_path="${file_path%"${file_path##*[![:space:]]}"}"
+  # Copy all files from templates directory preserving structure
+  while IFS= read -r -d '' src_file; do
+    # Get relative path from templates directory
+    local rel_path="${src_file#$templates_dir/}"
+    local dest_file="$worktree_dir/$rel_path"
 
-    [[ -z "$file_path" ]] && continue
+    # Create directory structure
+    mkdir -p "$(dirname "$dest_file")"
 
-    # Remove leading ./ if present
-    file_path="${file_path#./}"
+    # Copy file
+    cp "$src_file" "$dest_file"
 
-    # Check if source file or directory exists
-    if [[ -f "$main_repo/$file_path" ]]; then
-      # Create directory structure in target
-      mkdir -p "$worktree_dir/$(dirname "$file_path")"
-
-      # Copy file
-      cp "$main_repo/$file_path" "$worktree_dir/$file_path"
-      echo "📄 Copied file: $main_repo/$file_path → $file_path"
-      copied_count=$((copied_count + 1))
-    elif [[ -d "$main_repo/$file_path" ]]; then
-      # Create parent directory structure in target
-      mkdir -p "$worktree_dir/$(dirname "$file_path")"
-
-      # Copy directory recursively
-      cp -r "$main_repo/$file_path" "$worktree_dir/$file_path"
-      echo "📁 Copied directory: $main_repo/$file_path → $file_path"
-      copied_count=$((copied_count + 1))
-    else
-      echo "⚠️ Warning: Not found in main repo, skipping: $main_repo/$file_path" >&2
+    # Check if file contains template variables before substitution
+    local has_variables=false
+    if grep -q '{{WORKTREE_NUM}}\|{{BRANCH}}\|{{REPO}}\|{{WORKTREE_PATH}}' "$src_file" 2>/dev/null; then
+      has_variables=true
     fi
-  done < "$config_file"
+
+    # Substitute template variables
+    substitute_template_variables "$dest_file" "$worktree_num" "$branch" "$worktree_dir" "$repo_name"
+
+    if [[ "$has_variables" == true ]]; then
+      echo "📄 $rel_path (with variable substitution)"
+    else
+      echo "📄 $rel_path"
+    fi
+    copied_count=$((copied_count + 1))
+  done < <(find "$templates_dir" -type f -not -name '.DS_Store' -print0)
 
   echo ""
   if [[ $copied_count -gt 0 ]]; then
-    echo "✅ Copied $copied_count item(s) from main repository"
+    echo "✅ Copied $copied_count file(s) from templates"
   else
     echo "⚠️ No files were copied"
   fi
@@ -101,15 +219,13 @@ git rev-parse --is-inside-work-tree &>/dev/null || {
 }
 
 # Get the main repository path
-# Use git-common-dir to find the main repo's .git directory, then get its parent
 git_common_dir="$(git rev-parse --git-common-dir)"
 main_repo="$(dirname "$git_common_dir")"
+repo_name="$(basename "$main_repo")"
 
-# Check if we're in a worktree by comparing the git directory
-git_common_dir="$(git rev-parse --git-common-dir)"
+# Check if we're in a worktree
 git_dir="$(git rev-parse --git-dir)"
 
-# If git-common-dir and git-dir are different, we're in a worktree
 if [[ "$git_common_dir" == "$git_dir" ]]; then
   echo "⚠️ You appear to be in the main repository, not a worktree"
   echo "This command is intended to be run from within a worktree directory"
@@ -127,4 +243,4 @@ if [[ "$git_common_dir" == "$git_dir" ]]; then
 fi
 
 # Sync files
-sync_files "$main_repo"
+sync_files "$main_repo" "$repo_name"
