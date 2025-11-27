@@ -178,51 +178,173 @@ cleanup_worktrees_dir() {
   return 0
 }
 
-# Copy files from main branch to worktree based on .git-wt.conf
+# Evaluate arithmetic expression with WORKTREE_NUM
+# Supports: {{WORKTREE_NUM + N}}, {{WORKTREE_NUM - N}}, {{WORKTREE_NUM * N}}, {{WORKTREE_NUM / N}}, {{WORKTREE_NUM % N}}
+eval_worktree_expr() {
+  local expr="$1"
+  local worktree_num="$2"
+
+  # Extract operator and operand: "WORKTREE_NUM + 3000" -> "+" and "3000"
+  if [[ "$expr" =~ ^WORKTREE_NUM[[:space:]]*([+*/%\-])[[:space:]]*([0-9]+)$ ]]; then
+    local op="${BASH_REMATCH[1]}"
+    local num="${BASH_REMATCH[2]}"
+    echo $((worktree_num $op num))
+  else
+    return 1
+  fi
+}
+
+# Substitute template variables in a file
+substitute_template_variables() {
+  local file="$1"
+  local worktree_num="$2"
+  local branch="$3"
+  local worktree_path="$4"
+
+  # Skip if file doesn't exist or is a directory
+  [[ -f "$file" ]] || return 0
+
+  # Create temporary file for substitution
+  local temp_file="${file}.tmp"
+
+  # First pass: simple variable substitutions
+  sed \
+    -e "s|{{WORKTREE_NUM}}|${worktree_num}|g" \
+    -e "s|{{BRANCH}}|${branch}|g" \
+    -e "s|{{REPO}}|${repo}|g" \
+    -e "s|{{WORKTREE_PATH}}|${worktree_path}|g" \
+    "$file" > "$temp_file"
+
+  # Second pass: arithmetic expressions {{WORKTREE_NUM + N}}
+  local content
+  content=$(<"$temp_file")
+
+  # Find and replace all arithmetic expressions
+  while [[ "$content" =~ \{\{(WORKTREE_NUM[[:space:]]*[+*/%\-][[:space:]]*[0-9]+)\}\} ]]; do
+    local full_match="${BASH_REMATCH[0]}"
+    local expr="${BASH_REMATCH[1]}"
+    local result
+    if result=$(eval_worktree_expr "$expr" "$worktree_num"); then
+      content="${content//$full_match/$result}"
+    else
+      break
+    fi
+  done
+
+  echo "$content" > "$temp_file"
+
+  # Replace original file with substituted version
+  mv "$temp_file" "$file"
+}
+
+# Recursively substitute template variables in directory
+substitute_template_variables_in_dir() {
+  local dir="$1"
+  local worktree_num="$2"
+  local branch="$3"
+  local worktree_path="$4"
+
+  # Find all files (not directories) and substitute variables
+  while IFS= read -r -d '' file; do
+    substitute_template_variables "$file" "$worktree_num" "$branch" "$worktree_path"
+  done < <(find "$dir" -type f -print0)
+}
+
+# Get owner/repo from git remote URL
+get_remote_repo_path() {
+  local remote_url
+  remote_url=$(git remote get-url origin 2>/dev/null) || return 1
+
+  # Extract owner/repo from various URL formats:
+  # git@github.com:owner/repo.git
+  # https://github.com/owner/repo.git
+  # https://github.com/owner/repo
+  if [[ "$remote_url" =~ [:/]([^/:]+)/([^/]+)$ ]]; then
+    local owner="${BASH_REMATCH[1]}"
+    local repo="${BASH_REMATCH[2]}"
+    # Remove .git suffix if present
+    repo="${repo%.git}"
+    echo "$owner/$repo"
+  else
+    return 1
+  fi
+}
+
+# Find templates directory (repo-local or global)
+find_templates_dir() {
+  local repo_templates="$root/.git-wt"
+
+  if [[ -d "$repo_templates" ]]; then
+    echo "$repo_templates"
+    return 0
+  fi
+
+  # Try global templates with owner/repo structure
+  local remote_path
+  if remote_path=$(get_remote_repo_path); then
+    local global_templates="$HOME/.git-wt/$remote_path"
+    if [[ -d "$global_templates" ]]; then
+      echo "$global_templates"
+      return 0
+    fi
+  fi
+
+  return 1
+}
+
+# Copy files from .git-wt/ directory to worktree with variable substitution
 copy_files_to_worktree() {
   local target="$1"
-  local config_file="$root/.git-wt.conf"
+  local worktree_num="$2"
+  local branch="$3"
 
-  # Skip if config file doesn't exist
-  [[ -f "$config_file" ]] || return 0
+  # Find templates directory
+  local templates_dir
+  if ! templates_dir=$(find_templates_dir); then
+    return 0
+  fi
 
   local copied_count=0
+  local is_global=false
+  [[ "$templates_dir" == "$HOME/.git-wt/"* ]] && is_global=true
 
-  # Read each line from config file
-  while IFS= read -r file_path || [[ -n "$file_path" ]]; do
-    # Skip empty lines and comments
-    [[ -z "$file_path" || "$file_path" =~ ^[[:space:]]*# ]] && continue
+  if [[ "$is_global" == true ]]; then
+    echo "📂 Using global templates: $templates_dir"
+  else
+    echo "📂 Using repo templates: $templates_dir"
+  fi
 
-    # Trim whitespace
-    file_path="${file_path#"${file_path%%[![:space:]]*}"}"
-    file_path="${file_path%"${file_path##*[![:space:]]}"}"
+  # Copy all files from templates directory preserving structure
+  while IFS= read -r -d '' src_file; do
+    # Get relative path from templates directory
+    local rel_path="${src_file#$templates_dir/}"
+    local dest_file="$target/$rel_path"
 
-    [[ -z "$file_path" ]] && continue
+    # Create directory structure
+    mkdir -p "$(dirname "$dest_file")"
 
-    # Check if source file or directory exists
-    if [[ -f "$root/$file_path" ]]; then
-      # Create directory structure in target
-      mkdir -p "$target/$(dirname "$file_path")"
+    # Copy file
+    cp "$src_file" "$dest_file"
 
-      # Copy file
-      cp "$root/$file_path" "$target/$file_path"
-      echo "📄 Copied file: $file_path"
-      copied_count=$((copied_count + 1))
-    elif [[ -d "$root/$file_path" ]]; then
-      # Create parent directory structure in target
-      mkdir -p "$target/$(dirname "$file_path")"
-
-      # Copy directory recursively
-      cp -r "$root/$file_path" "$target/$file_path"
-      echo "📁 Copied directory: $file_path"
-      copied_count=$((copied_count + 1))
-    else
-      echo "⚠️ Warning: File or directory not found, skipping: $file_path" >&2
+    # Check if file contains template variables before substitution
+    local has_variables=false
+    if grep -q '{{WORKTREE_NUM}}\|{{BRANCH}}\|{{REPO}}\|{{WORKTREE_PATH}}' "$src_file" 2>/dev/null; then
+      has_variables=true
     fi
-  done < "$config_file"
+
+    # Substitute template variables
+    substitute_template_variables "$dest_file" "$worktree_num" "$branch" "$target"
+
+    if [[ "$has_variables" == true ]]; then
+      echo "📄 $rel_path (with variable substitution)"
+    else
+      echo "📄 $rel_path"
+    fi
+    copied_count=$((copied_count + 1))
+  done < <(find "$templates_dir" -type f -not -name '.DS_Store' -print0)
 
   if [[ $copied_count -gt 0 ]]; then
-    echo "✅ Copied $copied_count files from configuration"
+    echo "✅ Copied $copied_count file(s) from templates"
   fi
 }
 
@@ -259,7 +381,7 @@ create_worktree() {
   echo "✅ Worktree created: $target (branch: $branch)"
 
   # Copy files from configuration
-  copy_files_to_worktree "$target"
+  copy_files_to_worktree "$target" "$next_num" "$branch"
 
   git worktree list
 

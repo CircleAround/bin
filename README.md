@@ -46,24 +46,62 @@ The interactive menu provides quick navigation:
 - `h`: Show help
 - `q`: Quit
 
-### File Copy Configuration
-Create a `.git-wt.conf` file in your repository root to automatically copy specific files and directories from the main branch to new worktrees:
+### Template System
+
+Create a `.git-wt/` directory to automatically copy files to new worktrees with template variable substitution:
 
 ```
-# .git-wt.conf
-.env
-.env.local
-config/secrets.yml
-data
-# Comments are supported
+# Repository-local templates
+project/.git-wt/
+    ├── .env.local
+    └── config/
+        └── database.yml
+
+# Or global templates (not committed to repository)
+~/.git-wt/<owner>/<repo>/
+    └── .env.local
 ```
 
-Files and directories listed in this configuration will be copied from the main branch to each new worktree, preserving directory structure. Missing files/directories are skipped with a warning message.
+Global template path is derived from git remote URL (e.g., `~/.git-wt/acme-corp/web-app/`).
+
+#### Template Variables
+
+Files can contain variables that are replaced when copied:
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `{{WORKTREE_NUM}}` | Worktree number (1-9) | `1` |
+| `{{WORKTREE_NUM + N}}` | Arithmetic expression | `{{WORKTREE_NUM + 3000}}` → `3001` |
+| `{{BRANCH}}` | Branch name | `feature/login` |
+| `{{REPO}}` | Repository name | `web-app` |
+| `{{WORKTREE_PATH}}` | Absolute path to worktree | `/path/to/repo.worktrees/1` |
+
+Supported operators for `WORKTREE_NUM`: `+`, `-`, `*`, `/`, `%`
+
+#### Example
+
+```bash
+# .git-wt/.env.local
+PORT={{WORKTREE_NUM + 3000}}
+DATABASE_NAME=myapp_dev_{{WORKTREE_NUM}}
+APP_URL=http://localhost:{{WORKTREE_NUM + 3000}}
+BRANCH_NAME={{BRANCH}}
+```
+
+When creating worktree 1:
+```
+PORT=3001
+DATABASE_NAME=myapp_dev_1
+APP_URL=http://localhost:3001
+BRANCH_NAME=feature/login
+```
+
+This enables parallel development with different ports for each worktree.
 
 ## git-wt-sync
-Sync files from main repository to current worktree based on `.git-wt.conf`.
+Sync files from main repository to current worktree based on `.git-wt/` directory.
 
-This command is useful when you create a worktree manually (not via `git-wt add`) and want to copy configured files afterward.
+This command is useful when you create a worktree manually (not via `git-wt add`) and want to copy template files afterward.
 
 ```bash
 # From within a worktree directory
@@ -71,7 +109,7 @@ cd ../myrepo.worktrees/1
 git-wt-sync
 ```
 
-The command reads `.git-wt.conf` from the current worktree and copies the listed files/directories from the main repository.
+The command finds `.git-wt/` templates (repository-local or global) and copies them to the current worktree with variable substitution.
 
 ## git-remove-merged-branches
 Remove merged branches in current git directory.
