@@ -21,8 +21,11 @@ source ~/.bashrc  # or ~/.zshrc
 Manage Git worktrees with sequential numbering in `../<repo>.worktrees/<number>` directories.
 
 ```bash
-# Create worktree with branch
+# Create worktree with new branch
 git-wt add feature-branch
+
+# Or use existing branch (local or remote)
+git-wt add existing-branch
 
 # Remove highest numbered worktree
 git-wt pop
