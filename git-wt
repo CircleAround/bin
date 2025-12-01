@@ -372,13 +372,14 @@ create_worktree() {
   # Track if branch exists remotely, otherwise create new
   if git show-ref --verify --quiet "refs/heads/$branch"; then
     git worktree add "$target" "$branch" || { rmdir "$target" 2>/dev/null; exit 1; }
+    echo "✅ Worktree created: $target (existing branch: $branch)"
   elif git ls-remote --exit-code --heads origin "$branch" &>/dev/null; then
     git worktree add "$target" "origin/$branch" || { rmdir "$target" 2>/dev/null; exit 1; }
+    echo "✅ Worktree created: $target (remote branch: $branch)"
   else
     git worktree add -b "$branch" "$target" || { rmdir "$target" 2>/dev/null; exit 1; }
+    echo "✅ Worktree created: $target (new branch: $branch)"
   fi
-
-  echo "✅ Worktree created: $target (branch: $branch)"
 
   # Copy files from configuration
   copy_files_to_worktree "$target" "$next_num" "$branch"
