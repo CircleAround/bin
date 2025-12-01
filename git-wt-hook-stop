@@ -39,22 +39,26 @@ fi
 # Mark as waiting
 "$GIT_WT" waiting >/dev/null 2>&1 || true
 
-# Extract Claude's last message from transcript
+# Extract messages from transcript
 if [[ -n "$transcript_path" && -f "$transcript_path" ]]; then
-  claude_message=""
   if command -v jq &>/dev/null; then
+    # Extract first user message for first_task (full text, first line only)
+    first_user_msg=$(grep '"type":"user"' "$transcript_path" 2>/dev/null | head -1 | jq -r '.message.content[0].text // empty' 2>/dev/null) || true
+    if [[ -n "$first_user_msg" ]]; then
+      # Get first line only
+      first_line=$(echo "$first_user_msg" | head -1)
+      "$GIT_WT" first-task "$first_line" >/dev/null 2>&1 || true
+    fi
+
+    # Extract Claude's last message
     claude_message=$(grep '"type":"assistant"' "$transcript_path" 2>/dev/null | tail -1 | jq -r '.message.content[0].text // empty' 2>/dev/null) || true
-  fi
-
-  # Save Claude's message if found (truncate to first line, max 100 chars)
-  if [[ -n "$claude_message" ]]; then
-    # Get first line only
-    first_line=$(echo "$claude_message" | head -1)
-    # Truncate to 100 chars
-    truncated="${first_line:0:100}"
-    [[ ${#first_line} -gt 100 ]] && truncated="${truncated}..."
-
-    "$GIT_WT" claude-msg "$truncated" >/dev/null 2>&1 || true
+    if [[ -n "$claude_message" ]]; then
+      # Get first line only, truncate to 100 chars
+      first_line=$(echo "$claude_message" | head -1)
+      truncated="${first_line:0:100}"
+      [[ ${#first_line} -gt 100 ]] && truncated="${truncated}..."
+      "$GIT_WT" claude-msg "$truncated" >/dev/null 2>&1 || true
+    fi
   fi
 fi
 

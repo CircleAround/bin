@@ -1033,6 +1033,31 @@ case "$command" in
       set_worktree_claude_msg "$wt_num" "$msg"
     fi
     ;;
+  first-task)
+    shift
+    # first-task subcommand processing (internal use by hooks)
+    # Sets first_task directly, overwriting any existing value
+    task_desc="${1-}"
+    wt_num=$(get_current_worktree_num)
+
+    if [[ -z "$wt_num" ]]; then
+      exit 0  # Silent exit if not in worktree
+    fi
+
+    if [[ -n "$task_desc" ]]; then
+      status_dir=$(get_status_dir)
+      status_file="$status_dir/${wt_num}.json"
+
+      if [[ -f "$status_file" ]]; then
+        # Update first_task directly
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+          sed -i '' "s/\"first_task\": *\"[^\"]*\"/\"first_task\": \"$task_desc\"/" "$status_file"
+        else
+          sed -i "s/\"first_task\": *\"[^\"]*\"/\"first_task\": \"$task_desc\"/" "$status_file"
+        fi
+      fi
+    fi
+    ;;
   "")
     # No arguments: show selection menu
     echo "📋 Current worktrees:"
