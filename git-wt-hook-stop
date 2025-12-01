@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+# git-wt-hook-stop - Claude Code Stop hook for git-wt
+# Called when Claude finishes responding (waiting for user input)
+set -euo pipefail
+
+# Check if current directory is a git-wt managed worktree
+is_git_wt_worktree() {
+  [[ "$PWD" =~ \.worktrees/[1-9](/|$) ]]
+}
+
+# Exit silently if not in a git-wt worktree
+if ! is_git_wt_worktree; then
+  exit 0
+fi
+
+# Read JSON input from stdin
+input=$(cat)
+
+# Extract transcript_path from JSON
+transcript_path=""
+if command -v jq &>/dev/null; then
+  transcript_path=$(echo "$input" | jq -r '.transcript_path // empty' 2>/dev/null) || true
+else
+  transcript_path=$(echo "$input" | grep -o '"transcript_path": *"[^"]*"' | sed 's/"transcript_path": *"\(.*\)"/\1/' | head -1) || true
+fi
+
+# Find git-wt command
+GIT_WT=""
+if command -v git-wt &>/dev/null; then
+  GIT_WT="git-wt"
+elif [[ -x "$HOME/bin/git-wt" ]]; then
+  GIT_WT="$HOME/bin/git-wt"
+elif [[ -x "$HOME/CircleAround/bin/git-wt" ]]; then
+  GIT_WT="$HOME/CircleAround/bin/git-wt"
+fi
+
+[[ -z "$GIT_WT" ]] && exit 0
+
+# Mark as waiting
+"$GIT_WT" waiting >/dev/null 2>&1 || true
+
+# Extract messages from transcript
+if [[ -n "$transcript_path" && -f "$transcript_path" ]]; then
+  if command -v jq &>/dev/null; then
+    # Extract first user message for first_task (full text, first line only)
+    first_user_msg=$(grep '"type":"user"' "$transcript_path" 2>/dev/null | head -1 | jq -r '.message.content[0].text // empty' 2>/dev/null) || true
+    if [[ -n "$first_user_msg" ]]; then
+      # Get first line only
+      first_line=$(echo "$first_user_msg" | head -1)
+      "$GIT_WT" first-task "$first_line" >/dev/null 2>&1 || true
+    fi
+
+    # Extract Claude's last message
+    claude_message=$(grep '"type":"assistant"' "$transcript_path" 2>/dev/null | tail -1 | jq -r '.message.content[0].text // empty' 2>/dev/null) || true
+    if [[ -n "$claude_message" ]]; then
+      # Get first line only, truncate to 100 chars
+      first_line=$(echo "$claude_message" | head -1)
+      truncated="${first_line:0:100}"
+      [[ ${#first_line} -gt 100 ]] && truncated="${truncated}..."
+      "$GIT_WT" claude-msg "$truncated" >/dev/null 2>&1 || true
+    fi
+  fi
+fi
+
+exit 0
