@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+# git-wt-hook-tool - Claude Code PostToolUse hook for git-wt
+# - AskUserQuestion → asking (選択待ち)
+# - Other tools → active (作業継続)
+set -euo pipefail
+
+# Check if current directory is a git-wt managed worktree
+is_git_wt_worktree() {
+  [[ "$PWD" =~ \.worktrees/[1-9](/|$) ]]
+}
+
+# Exit silently if not in a git-wt worktree
+if ! is_git_wt_worktree; then
+  exit 0
+fi
+
+# Read JSON input from stdin
+input=$(cat)
+
+# Extract tool_name from JSON
+tool_name=""
+if command -v jq &>/dev/null; then
+  tool_name=$(echo "$input" | jq -r '.tool_name // empty' 2>/dev/null) || true
+else
+  # Fallback: extract using grep/sed
+  tool_name=$(echo "$input" | grep -o '"tool_name": *"[^"]*"' | sed 's/"tool_name": *"\(.*\)"/\1/' | head -1) || true
+fi
+
+# Find git-wt command
+GIT_WT=""
+if command -v git-wt &>/dev/null; then
+  GIT_WT="git-wt"
+elif [[ -x "$HOME/bin/git-wt" ]]; then
+  GIT_WT="$HOME/bin/git-wt"
+elif [[ -x "$HOME/CircleAround/bin/git-wt" ]]; then
+  GIT_WT="$HOME/CircleAround/bin/git-wt"
+fi
+
+[[ -z "$GIT_WT" ]] && exit 0
+
+# AskUserQuestion → asking (選択待ち)
+# Other permission-required tools → active (許可されて作業継続)
+case "$tool_name" in
+  AskUserQuestion)
+    "$GIT_WT" asking >/dev/null 2>&1 || true
+    ;;
+  Bash|Edit|Write|NotebookEdit)
+    # These were set to waiting in PreToolUse, now back to active
+    current_task=$("$GIT_WT" task 2>/dev/null | grep -o ': .*' | sed 's/^: //' || echo "")
+    if [[ -n "$current_task" && "$current_task" != "(no task set)" && "$current_task" != "(タスクなし)" ]]; then
+      "$GIT_WT" task "$current_task" >/dev/null 2>&1 || true
+    fi
+    ;;
+esac
+
+exit 0

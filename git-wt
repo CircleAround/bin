@@ -10,6 +10,8 @@ Commands:
   git-wt add <branch>  Create worktree with branch
   git-wt pop [num]     Remove worktree by number (defaults to highest)
   git-wt goto <num>    Copy cd command to clipboard (0=main, 1-9=worktree)
+  git-wt task [desc]   Set/show task description for current worktree
+  git-wt status [-w]   Show status of all worktrees (-w: watch mode)
   git-wt               Show interactive menu
 
 Examples:
@@ -18,6 +20,10 @@ Examples:
   git-wt pop 2          Remove worktree directory "2"
   git-wt goto 0         Copy cd command to main repository
   git-wt goto 1         Copy cd command to worktree 1
+  git-wt task "認証機能実装"  Set task description
+  git-wt status         Show all worktrees with their tasks
+  git-wt status -w      Watch mode (auto-refresh every 2s)
+  git-wt status -w -n 5 Watch mode with 5s interval
   git-wt                Interactive menu with add/pop/help/exit options
 EOF
   exit 1
@@ -140,6 +146,8 @@ cleanup_worktrees_dir() {
     has_anything=true
 
     local basename_item=$(basename "$item")
+    # Skip .status directory (managed by git-wt)
+    [[ "$basename_item" == ".status" ]] && continue
     if [[ ! "$basename_item" =~ ^[1-9]$ ]] || [[ ! -d "$item" ]]; then
       has_non_numbered=true
       non_numbered_items+=("$basename_item")
@@ -268,6 +276,424 @@ get_remote_repo_path() {
   else
     return 1
   fi
+}
+
+# ─────────────────────────────────────────────────────────────
+# Status management functions
+# ─────────────────────────────────────────────────────────────
+
+# Get status directory path
+get_status_dir() {
+  echo "$wroot/.status"
+}
+
+# Get current worktree number from PWD
+# Returns: worktree number (1-9) or empty if not in a worktree
+get_current_worktree_num() {
+  local current_path="$PWD"
+
+  # Check if current path matches .worktrees/<num> pattern
+  if [[ "$current_path" =~ \.worktrees/([1-9])(/|$) ]]; then
+    echo "${BASH_REMATCH[1]}"
+  fi
+}
+
+# Get worktree number from path
+get_worktree_num_from_path() {
+  local path="$1"
+  if [[ "$path" =~ \.worktrees/([1-9])(/|$) ]]; then
+    echo "${BASH_REMATCH[1]}"
+  fi
+}
+
+# Set task for a worktree
+# Usage: set_worktree_task <num> <description>
+set_worktree_task() {
+  local num="$1"
+  local description="$2"
+  local status_dir
+  status_dir=$(get_status_dir)
+
+  mkdir -p "$status_dir"
+
+  local status_file="$status_dir/${num}.json"
+  local timestamp
+  timestamp=$(date +"%Y-%m-%d %H:%M:%S")
+
+  # Get branch name for this worktree
+  local branch=""
+  local worktree_path="$wroot/$num"
+  if [[ -d "$worktree_path" ]]; then
+    branch=$(git -C "$worktree_path" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
+  fi
+
+  # Check if status file already exists (preserve first_task)
+  if [[ -f "$status_file" ]]; then
+    # Update last_task, status, and timestamp only
+    local first_task
+    first_task=$(grep -o '"first_task": *"[^"]*"' "$status_file" | sed 's/"first_task": *"\(.*\)"/\1/' || echo "")
+
+    # If first_task is empty (old format), use current task as first_task
+    [[ -z "$first_task" ]] && first_task=$(grep -o '"task": *"[^"]*"' "$status_file" | sed 's/"task": *"\(.*\)"/\1/' || echo "$description")
+
+    cat > "$status_file" << EOF
+{
+  "first_task": "$first_task",
+  "last_task": "$description",
+  "status": "active",
+  "branch": "$branch",
+  "updated": "$timestamp"
+}
+EOF
+  else
+    # New file: set both first_task and last_task
+    cat > "$status_file" << EOF
+{
+  "first_task": "$description",
+  "last_task": "$description",
+  "status": "active",
+  "branch": "$branch",
+  "updated": "$timestamp"
+}
+EOF
+  fi
+}
+
+# Get first task for a worktree
+get_worktree_first_task() {
+  local num="$1"
+  local status_dir
+  status_dir=$(get_status_dir)
+  local status_file="$status_dir/${num}.json"
+
+  if [[ -f "$status_file" ]]; then
+    local first_task
+    first_task=$(grep -o '"first_task": *"[^"]*"' "$status_file" | sed 's/"first_task": *"\(.*\)"/\1/')
+    # Fallback to old format
+    [[ -z "$first_task" ]] && first_task=$(grep -o '"task": *"[^"]*"' "$status_file" | sed 's/"task": *"\(.*\)"/\1/')
+    echo "$first_task"
+  fi
+}
+
+# Get last task for a worktree
+get_worktree_last_task() {
+  local num="$1"
+  local status_dir
+  status_dir=$(get_status_dir)
+  local status_file="$status_dir/${num}.json"
+
+  if [[ -f "$status_file" ]]; then
+    local last_task
+    last_task=$(grep -o '"last_task": *"[^"]*"' "$status_file" | sed 's/"last_task": *"\(.*\)"/\1/')
+    # Fallback to old format
+    [[ -z "$last_task" ]] && last_task=$(grep -o '"task": *"[^"]*"' "$status_file" | sed 's/"task": *"\(.*\)"/\1/')
+    echo "$last_task"
+  fi
+}
+
+# Get task for a worktree (backward compatibility - returns last_task)
+get_worktree_task() {
+  get_worktree_last_task "$1"
+}
+
+# Get status for a worktree
+get_worktree_status() {
+  local num="$1"
+  local status_dir
+  status_dir=$(get_status_dir)
+  local status_file="$status_dir/${num}.json"
+
+  if [[ -f "$status_file" ]]; then
+    grep -o '"status": *"[^"]*"' "$status_file" | sed 's/"status": *"\(.*\)"/\1/'
+  fi
+}
+
+# Get updated timestamp for a worktree
+get_worktree_updated() {
+  local num="$1"
+  local status_dir
+  status_dir=$(get_status_dir)
+  local status_file="$status_dir/${num}.json"
+
+  if [[ -f "$status_file" ]]; then
+    grep -o '"updated": *"[^"]*"' "$status_file" | sed 's/"updated": *"\(.*\)"/\1/'
+  fi
+}
+
+# Format relative time from local timestamp
+format_relative_time() {
+  local timestamp="$1"
+
+  # Convert timestamp to epoch seconds
+  local then_epoch
+  if [[ "$OSTYPE" == "darwin"* ]]; then
+    then_epoch=$(date -j -f "%Y-%m-%d %H:%M:%S" "$timestamp" +%s 2>/dev/null) || return
+  else
+    then_epoch=$(date -d "$timestamp" +%s 2>/dev/null) || return
+  fi
+
+  local now_epoch
+  now_epoch=$(date +%s)
+  local diff=$((now_epoch - then_epoch))
+
+  if [[ $diff -lt 60 ]]; then
+    echo "now"
+  elif [[ $diff -lt 3600 ]]; then
+    echo "$((diff / 60))分前"
+  elif [[ $diff -lt 86400 ]]; then
+    echo "$((diff / 3600))時間前"
+  else
+    echo "$((diff / 86400))日前"
+  fi
+}
+
+# Mark task as done
+mark_worktree_done() {
+  local num="$1"
+  local status_dir
+  status_dir=$(get_status_dir)
+  local status_file="$status_dir/${num}.json"
+
+  if [[ -f "$status_file" ]]; then
+    local timestamp
+    timestamp=$(date +"%Y-%m-%d %H:%M:%S")
+
+    # Update status to done
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+      sed -i '' "s/\"status\": *\"[^\"]*\"/\"status\": \"done\"/" "$status_file"
+      sed -i '' "s/\"updated\": *\"[^\"]*\"/\"updated\": \"$timestamp\"/" "$status_file"
+    else
+      sed -i "s/\"status\": *\"[^\"]*\"/\"status\": \"done\"/" "$status_file"
+      sed -i "s/\"updated\": *\"[^\"]*\"/\"updated\": \"$timestamp\"/" "$status_file"
+    fi
+    return 0
+  fi
+  return 1
+}
+
+# Mark task as asking (waiting for user selection)
+mark_worktree_asking() {
+  local num="$1"
+  local status_dir
+  status_dir=$(get_status_dir)
+  local status_file="$status_dir/${num}.json"
+
+  if [[ -f "$status_file" ]]; then
+    local timestamp
+    timestamp=$(date +"%Y-%m-%d %H:%M:%S")
+
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+      sed -i '' "s/\"status\": *\"[^\"]*\"/\"status\": \"asking\"/" "$status_file"
+      sed -i '' "s/\"updated\": *\"[^\"]*\"/\"updated\": \"$timestamp\"/" "$status_file"
+    else
+      sed -i "s/\"status\": *\"[^\"]*\"/\"status\": \"asking\"/" "$status_file"
+      sed -i "s/\"updated\": *\"[^\"]*\"/\"updated\": \"$timestamp\"/" "$status_file"
+    fi
+    return 0
+  else
+    mkdir -p "$status_dir"
+    local timestamp
+    timestamp=$(date +"%Y-%m-%d %H:%M:%S")
+    cat > "$status_file" << EOF
+{
+  "task": "",
+  "status": "asking",
+  "branch": "",
+  "updated": "$timestamp"
+}
+EOF
+    return 0
+  fi
+  return 1
+}
+
+# Mark task as waiting for input
+mark_worktree_waiting() {
+  local num="$1"
+  local status_dir
+  status_dir=$(get_status_dir)
+  local status_file="$status_dir/${num}.json"
+
+  if [[ -f "$status_file" ]]; then
+    local timestamp
+    timestamp=$(date +"%Y-%m-%d %H:%M:%S")
+
+    # Update status to waiting
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+      sed -i '' "s/\"status\": *\"[^\"]*\"/\"status\": \"waiting\"/" "$status_file"
+      sed -i '' "s/\"updated\": *\"[^\"]*\"/\"updated\": \"$timestamp\"/" "$status_file"
+    else
+      sed -i "s/\"status\": *\"[^\"]*\"/\"status\": \"waiting\"/" "$status_file"
+      sed -i "s/\"updated\": *\"[^\"]*\"/\"updated\": \"$timestamp\"/" "$status_file"
+    fi
+    return 0
+  else
+    # Create new status file with waiting status
+    mkdir -p "$status_dir"
+    local timestamp
+    timestamp=$(date +"%Y-%m-%d %H:%M:%S")
+    cat > "$status_file" << EOF
+{
+  "task": "",
+  "status": "waiting",
+  "branch": "",
+  "updated": "$timestamp"
+}
+EOF
+    return 0
+  fi
+  return 1
+}
+
+# Clear task (remove status file)
+clear_worktree_task() {
+  local num="$1"
+  local status_dir
+  status_dir=$(get_status_dir)
+  local status_file="$status_dir/${num}.json"
+
+  if [[ -f "$status_file" ]]; then
+    rm "$status_file"
+  fi
+}
+
+# Set Claude's last message for a worktree
+set_worktree_claude_msg() {
+  local num="$1"
+  local message="$2"
+  local status_dir
+  status_dir=$(get_status_dir)
+  local status_file="$status_dir/${num}.json"
+
+  if [[ -f "$status_file" ]]; then
+    # Escape special characters for JSON
+    message="${message//\\/\\\\}"
+    message="${message//\"/\\\"}"
+    message="${message//$'\n'/\\n}"
+
+    # Check if claude_msg field exists
+    if grep -q '"claude_msg"' "$status_file" 2>/dev/null; then
+      # Update existing field
+      if [[ "$OSTYPE" == "darwin"* ]]; then
+        sed -i '' "s/\"claude_msg\": *\"[^\"]*\"/\"claude_msg\": \"$message\"/" "$status_file"
+      else
+        sed -i "s/\"claude_msg\": *\"[^\"]*\"/\"claude_msg\": \"$message\"/" "$status_file"
+      fi
+    else
+      # Add new field before the closing brace
+      if [[ "$OSTYPE" == "darwin"* ]]; then
+        sed -i '' "s/}$/,\n  \"claude_msg\": \"$message\"\n}/" "$status_file"
+      else
+        sed -i "s/}$/,\n  \"claude_msg\": \"$message\"\n}/" "$status_file"
+      fi
+    fi
+  fi
+}
+
+# Get Claude's last message for a worktree
+get_worktree_claude_msg() {
+  local num="$1"
+  local status_dir
+  status_dir=$(get_status_dir)
+  local status_file="$status_dir/${num}.json"
+
+  if [[ -f "$status_file" ]]; then
+    grep -o '"claude_msg": *"[^"]*"' "$status_file" 2>/dev/null | sed 's/"claude_msg": *"\(.*\)"/\1/' || true
+  fi
+}
+
+# Show status of all worktrees
+show_all_status() {
+  echo "git-wt ステータス ($repo)"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+  local has_worktrees=false
+
+  # Show main repo (0)
+  local main_branch
+  main_branch=$(git -C "$root" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "-")
+  echo ""
+  echo "[0] $main_branch (main)"
+
+  # Show worktrees 1-9
+  for num in 1 2 3 4 5 6 7 8 9; do
+    local worktree_path="$wroot/$num"
+    [[ -d "$worktree_path" ]] || continue
+
+    has_worktrees=true
+
+    local branch
+    branch=$(git -C "$worktree_path" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "-")
+
+    local first_task
+    first_task=$(get_worktree_first_task "$num")
+
+    local last_task
+    last_task=$(get_worktree_last_task "$num")
+
+    local status
+    status=$(get_worktree_status "$num")
+
+    local updated
+    updated=$(get_worktree_updated "$num")
+    local relative_time=""
+    if [[ -n "$updated" ]]; then
+      relative_time=$(format_relative_time "$updated") || relative_time=""
+    fi
+
+    # Build header line: [num] branch (time)
+    echo ""
+    if [[ -n "$relative_time" ]]; then
+      echo "[$num] $branch ($relative_time)"
+    else
+      echo "[$num] $branch"
+    fi
+
+    # Show status indicator
+    local status_icon=""
+    case "$status" in
+      asking)  status_icon="🙋 選択待ち" ;;
+      waiting) status_icon="⏳ 入力待ち" ;;
+      active)  status_icon="● 作業中" ;;
+      done)    status_icon="✓ 完了" ;;
+    esac
+
+    if [[ -n "$status_icon" ]]; then
+      echo "    $status_icon"
+    fi
+
+    # Show first task (full)
+    if [[ -n "$first_task" ]]; then
+      echo "    📋 $first_task"
+    fi
+
+    # Show last task (truncated) if different from first
+    if [[ -n "$last_task" && "$last_task" != "$first_task" ]]; then
+      # Truncate to ~60 chars
+      local truncated_last="${last_task:0:60}"
+      [[ ${#last_task} -gt 60 ]] && truncated_last="${truncated_last}..."
+      echo "    └─ $truncated_last"
+    fi
+
+    # Show Claude's last message
+    local claude_msg
+    claude_msg=$(get_worktree_claude_msg "$num")
+    if [[ -n "$claude_msg" ]]; then
+      echo "    🤖 $claude_msg"
+    fi
+
+    # If no tasks at all
+    if [[ -z "$first_task" && -z "$last_task" && -z "$claude_msg" ]]; then
+      echo "    (タスクなし)"
+    fi
+  done
+
+  if [[ "$has_worktrees" == false ]]; then
+    echo ""
+    echo "(ワークツリーなし)"
+  fi
+
+  echo ""
 }
 
 # Find templates directory (repo-local or global)
@@ -459,7 +885,10 @@ case "$command" in
       git worktree remove --force "$target"
     fi
     echo "✅ Worktree removed: $target"
-    
+
+    # Remove status file for this worktree
+    clear_worktree_task "$target_num"
+
     # Safely cleanup worktrees directory
     cleanup_worktrees_dir
     
@@ -495,6 +924,113 @@ case "$command" in
         exit 1
       fi
       copy_cd_command "$target"
+    fi
+    ;;
+  task)
+    shift
+    # task subcommand processing
+    task_desc="${1-}"
+
+    # Get current worktree number
+    wt_num=$(get_current_worktree_num)
+
+    if [[ -z "$wt_num" ]]; then
+      echo "❌ Not in a git-wt managed worktree"
+      echo "   Current directory must be inside: <repo>.worktrees/<num>"
+      exit 1
+    fi
+
+    if [[ -z "$task_desc" ]]; then
+      # Show current task
+      current_task=$(get_worktree_task "$wt_num")
+      if [[ -n "$current_task" ]]; then
+        echo "📋 Worktree $wt_num: $current_task"
+      else
+        echo "📋 Worktree $wt_num: (no task set)"
+      fi
+    else
+      # Set task
+      set_worktree_task "$wt_num" "$task_desc"
+      echo "✅ Task set for worktree $wt_num: $task_desc"
+    fi
+    ;;
+  status)
+    shift
+    # status subcommand processing
+    watch_mode=false
+    watch_interval=2
+
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        -w|--watch)
+          watch_mode=true
+          shift
+          ;;
+        -n|--interval)
+          watch_interval="$2"
+          shift 2
+          ;;
+        *)
+          echo "❌ Unknown option: $1"
+          exit 1
+          ;;
+      esac
+    done
+
+    if [[ "$watch_mode" == true ]]; then
+      # Watch mode: refresh every N seconds
+      trap 'printf "\033[?25h"; echo ""; echo "👋 Stopped watching"; exit 0' INT
+      printf "\033[?25l"  # Hide cursor
+      while true; do
+        # Move cursor to top and clear screen
+        printf "\033[H\033[J"
+        echo "👀 git-wt status --watch (Ctrl+C to stop)"
+        echo ""
+        show_all_status
+        echo ""
+        echo "🕐 Updated: $(date '+%H:%M:%S') (interval: ${watch_interval}s)"
+        sleep "$watch_interval"
+      done
+    else
+      show_all_status
+    fi
+    ;;
+  waiting)
+    # waiting subcommand processing
+    wt_num=$(get_current_worktree_num)
+
+    if [[ -z "$wt_num" ]]; then
+      echo "❌ Not in a git-wt managed worktree"
+      exit 1
+    fi
+
+    mark_worktree_waiting "$wt_num"
+    echo "⏳ Marked as waiting for input (worktree $wt_num)"
+    ;;
+  asking)
+    # asking subcommand processing
+    wt_num=$(get_current_worktree_num)
+
+    if [[ -z "$wt_num" ]]; then
+      echo "❌ Not in a git-wt managed worktree"
+      exit 1
+    fi
+
+    mark_worktree_asking "$wt_num"
+    echo "🙋 Marked as asking for selection (worktree $wt_num)"
+    ;;
+  claude-msg)
+    shift
+    # claude-msg subcommand processing (internal use by hooks)
+    msg="${1-}"
+    wt_num=$(get_current_worktree_num)
+
+    if [[ -z "$wt_num" ]]; then
+      exit 0  # Silent exit if not in worktree
+    fi
+
+    if [[ -n "$msg" ]]; then
+      set_worktree_claude_msg "$wt_num" "$msg"
     fi
     ;;
   "")
