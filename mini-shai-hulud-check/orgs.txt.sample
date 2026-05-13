@@ -1,0 +1,16 @@
+# Mini Shai-Hulud 2nd Wave チェック対象 Org/ユーザー名一覧
+# 1行1件で記載。# 始まりはコメント、空行は無視されます。
+# Org名でも個人ユーザー名でもOK (gh repo list が受け取れる名前なら何でも)
+
+# 例: 会社のメインOrg
+# my-company
+
+# 例: 別チームのOrg
+# my-company-platform
+# my-company-frontend
+
+# 例: 自分の個人アカウント
+# ms2sato
+
+# 例: 関わっているOSS Org
+# some-oss-org
