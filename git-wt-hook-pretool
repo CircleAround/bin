@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+# git-wt-hook-pretool - Claude Code PreToolUse hook for git-wt
+# Mark as waiting when tools that may require permission are about to be used
+set -euo pipefail
+
+# Check if current directory is a git-wt managed worktree
+is_git_wt_worktree() {
+  [[ "$PWD" =~ \.worktrees/[1-9](/|$) ]]
+}
+
+# Exit silently if not in a git-wt worktree
+if ! is_git_wt_worktree; then
+  exit 0
+fi
+
+# Read JSON input from stdin
+input=$(cat)
+
+# Extract tool_name from JSON
+tool_name=""
+if command -v jq &>/dev/null; then
+  tool_name=$(echo "$input" | jq -r '.tool_name // empty' 2>/dev/null) || true
+else
+  tool_name=$(echo "$input" | grep -o '"tool_name": *"[^"]*"' | sed 's/"tool_name": *"\(.*\)"/\1/' | head -1) || true
+fi
+
+# Tools that may require permission (user interaction)
+case "$tool_name" in
+  Bash|Edit|Write|NotebookEdit)
+    # These tools may show permission dialog
+    ;;
+  *)
+    # Other tools typically auto-execute
+    exit 0
+    ;;
+esac
+
+# Find git-wt command
+GIT_WT=""
+if command -v git-wt &>/dev/null; then
+  GIT_WT="git-wt"
+elif [[ -x "$HOME/bin/git-wt" ]]; then
+  GIT_WT="$HOME/bin/git-wt"
+elif [[ -x "$HOME/CircleAround/bin/git-wt" ]]; then
+  GIT_WT="$HOME/CircleAround/bin/git-wt"
+fi
+
+# Mark as waiting (may be waiting for permission)
+if [[ -n "$GIT_WT" ]]; then
+  "$GIT_WT" waiting >/dev/null 2>&1 || true
+fi
+
+exit 0

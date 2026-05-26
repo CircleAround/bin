@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+# git-wt-hook - Claude Code hook script for git-wt task tracking
+# This script is called by Claude Code's UserPromptSubmit hook
+# Input: JSON via stdin with user prompt
+set -euo pipefail
+
+# Check if current directory is a git-wt managed worktree
+is_git_wt_worktree() {
+  [[ "$PWD" =~ \.worktrees/[1-9](/|$) ]]
+}
+
+# Exit silently if not in a git-wt worktree
+if ! is_git_wt_worktree; then
+  exit 0
+fi
+
+# Read JSON input from stdin
+input=$(cat)
+
+# Extract prompt from JSON (works with Claude Code's hook format)
+# Format: {"session_id": "...", "prompt": "user message here"}
+prompt=""
+if command -v jq &>/dev/null; then
+  prompt=$(echo "$input" | jq -r '.prompt // empty' 2>/dev/null) || true
+else
+  # Fallback: extract prompt using grep/sed (basic parsing)
+  prompt=$(echo "$input" | grep -o '"prompt": *"[^"]*"' | sed 's/"prompt": *"\(.*\)"/\1/' | head -1) || true
+fi
+
+# Exit if no prompt found
+[[ -z "$prompt" ]] && exit 0
+
+# Truncate prompt to first 50 characters for task description
+task_desc="${prompt:0:50}"
+# Add ellipsis if truncated
+[[ ${#prompt} -gt 50 ]] && task_desc="${task_desc}..."
+
+# Find git-wt command
+GIT_WT=""
+if command -v git-wt &>/dev/null; then
+  GIT_WT="git-wt"
+elif [[ -x "$HOME/bin/git-wt" ]]; then
+  GIT_WT="$HOME/bin/git-wt"
+elif [[ -x "$HOME/CircleAround/bin/git-wt" ]]; then
+  GIT_WT="$HOME/CircleAround/bin/git-wt"
+fi
+
+# Set task if git-wt is available
+if [[ -n "$GIT_WT" ]]; then
+  "$GIT_WT" task "$task_desc" >/dev/null 2>&1 || true
+fi
+
+exit 0
